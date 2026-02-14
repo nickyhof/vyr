@@ -1,0 +1,39 @@
+// std/string — String utilities for Vyr
+// Compositions of string builtins into higher-level operations.
+
+fn repeat(s, n) {
+  if n <= 0 { "" } else { s + repeat(s, n - 1) }
+}
+
+fn pad_left(s, width, fill) {
+  let current = s |> length
+  if current >= width { s } else { repeat(fill, width - current) + s }
+}
+
+fn pad_right(s, width, fill) {
+  let current = s |> length
+  if current >= width { s } else { s + repeat(fill, width - current) }
+}
+
+fn is_empty(s) {
+  let len = s |> length
+  len == 0
+}
+
+fn words(s) {
+  s |> split(" ")
+}
+
+fn chars(s) {
+  let len = s |> length
+  len |> range |> map(fn(i) { char_at(s, i) })
+}
+
+fn capitalize(s) {
+  let len = s |> length
+  if len == 0 { s } else {
+    let first = char_at(s, 0) |> uppercase
+    let rest = substring(s, 1, len) |> lowercase
+    first + rest
+  }
+}

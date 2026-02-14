@@ -1,0 +1,53 @@
+// errors.vyr — Showcase: Vyr error handling with Result types
+import "std/result"
+
+fn safe_divide(a, b) {
+  if b == 0 { err("division by zero") } else { ok(a / b) }
+}
+
+fn parse_and_double(s) {
+  s |> try_to_int
+    |> map_ok(fn(n) { n * 2 })
+}
+
+fn main() {
+  // Creating results
+  ok(42) |> print
+  err("something went wrong") |> print
+
+  // Checking results
+  ok(42) |> is_ok |> print
+  err("oops") |> is_err |> print
+
+  // Unwrapping
+  ok(42) |> unwrap |> print
+  err("oops") |> unwrap_or("default") |> print
+
+  // Safe division
+  safe_divide(10, 3) |> print
+  safe_divide(10, 0) |> print
+
+  // Pipeline with map_ok
+  safe_divide(100, 4) |> map_ok(fn(x) { x * 2 }) |> print
+
+  // and_then chains Results
+  ok(10) |> and_then(fn(x) { safe_divide(x, 2) }) |> print
+  ok(10) |> and_then(fn(x) { safe_divide(x, 0) }) |> print
+
+  // err passes through and_then unchanged
+  err("early failure") |> and_then(fn(x) { ok(x + 1) }) |> print
+
+  // try_to_int: safe parsing
+  "42" |> try_to_int |> print
+  "abc" |> try_to_int |> print
+
+  // Full pipeline: parse → compute → unwrap with default
+  "123" |> parse_and_double |> unwrap_or(0) |> print
+  "xyz" |> parse_and_double |> unwrap_or(0) |> print
+
+  // try_read_file: safe file reading
+  try_read_file("nonexistent.txt") |> is_err |> print
+
+  // Type checking
+  ok(1) |> type_of |> print
+}

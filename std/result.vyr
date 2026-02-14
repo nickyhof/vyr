@@ -1,0 +1,45 @@
+// std/result — Result type utilities for Vyr
+// Higher-order operations for composing Ok/Err pipelines.
+
+fn map_ok(result, f) {
+  if is_ok(result) {
+    let val = unwrap(result)
+    ok(val |> f)
+  } else {
+    result
+  }
+}
+
+fn map_err(result, f) {
+  if is_err(result) {
+    let val = unwrap_or(result, "")
+    err(val |> f)
+  } else {
+    result
+  }
+}
+
+fn and_then(result, f) {
+  if is_ok(result) {
+    let val = unwrap(result)
+    val |> f
+  } else {
+    result
+  }
+}
+
+fn or_else(result, f) {
+  if is_err(result) {
+    f(result)
+  } else {
+    result
+  }
+}
+
+fn flatten_result(result) {
+  if is_ok(result) {
+    unwrap(result)
+  } else {
+    result
+  }
+}

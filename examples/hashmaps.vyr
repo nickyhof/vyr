@@ -1,0 +1,39 @@
+// hashmaps.vyr — Showcase: Vyr hashmaps
+import "std/string"
+
+fn main() {
+  // Create a hashmap
+  let user = #{name: "alice", age: 30, role: "engineer"}
+  user |> print
+
+  // Dot access
+  user.name |> capitalize |> print
+
+  // get with default
+  get(user, "email", "n/a") |> print
+
+  // Immutable update
+  let updated = set(user, "level", "senior")
+  updated |> print
+
+  // Keys and values
+  user |> keys |> print
+  user |> values |> print
+
+  // Merge two maps
+  let extra = #{team: "platform", location: "remote"}
+  merge(user, extra) |> print
+
+  // Remove a key
+  remove(user, "age") |> print
+
+  // Check existence
+  has_key(user, "name") |> print
+  has_key(user, "email") |> print
+
+  // Pipe through operations
+  #{greeting: "hello world"} |> get("greeting") |> uppercase |> print
+
+  // Format strings
+  format("Hello {}, age {}!", user.name, user.age) |> print
+}

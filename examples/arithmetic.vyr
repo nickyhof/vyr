@@ -1,0 +1,8 @@
+fn double(x) {
+  x * 2
+}
+
+fn main() {
+  let result = 21 |> double
+  result |> print
+}

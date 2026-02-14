@@ -1,0 +1,102 @@
+// std/collections — Collection utilities for Vyr
+// Higher-order operations built on filter, reduce, map, and builtins.
+
+fn any(xs, pred) {
+  let matches = xs |> filter(pred) |> length
+  matches > 0
+}
+
+fn all(xs, pred) {
+  let matches = xs |> filter(pred) |> length
+  let total = xs |> length
+  matches == total
+}
+
+fn none(xs, pred) {
+  let matches = xs |> filter(pred) |> length
+  matches == 0
+}
+
+fn count(xs, pred) {
+  xs |> filter(pred) |> length
+}
+
+fn find(xs, pred) {
+  xs |> filter(pred) |> head
+}
+
+fn first(xs) {
+  xs |> head
+}
+
+fn last(xs) {
+  let len = xs |> length
+  index(xs, len - 1)
+}
+
+fn take(xs, n) {
+  slice(xs, 0, n)
+}
+
+fn drop(xs, n) {
+  let len = xs |> length
+  slice(xs, n, len)
+}
+
+fn flatten(xs) {
+  xs |> reduce([], fn(acc, x) { concat(acc, x) })
+}
+
+fn flat_map(xs, f) {
+  xs |> map(f) |> flatten
+}
+
+fn zip(a, b) {
+  let len_a = a |> length
+  let len_b = b |> length
+  let len = if len_a <= len_b { len_a } else { len_b }
+  len |> range |> map(fn(i) { [index(a, i), index(b, i)] })
+}
+
+fn enumerate(xs) {
+  let len = xs |> length
+  len |> range |> map(fn(i) { [i, index(xs, i)] })
+}
+
+fn chunk(xs, size) {
+  let len = xs |> length
+  let num_chunks = len / size
+  let has_extra = mod(len, size) > 0
+  let extra = if has_extra { 1 } else { 0 }
+  let total = num_chunks + extra
+  total |> range |> map(fn(i) {
+    let start = i * size
+    let raw_end = start + size
+    let end = if raw_end > len { len } else { raw_end }
+    slice(xs, start, end)
+  })
+}
+
+fn sum(xs) {
+  xs |> reduce(0, fn(a, x) { a + x })
+}
+
+fn product(xs) {
+  xs |> reduce(1, fn(a, x) { a * x })
+}
+
+fn max_of(xs) {
+  let h = xs |> head
+  xs |> reduce(h, fn(a, x) { if x > a { x } else { a } })
+}
+
+fn min_of(xs) {
+  let h = xs |> head
+  xs |> reduce(h, fn(a, x) { if x < a { x } else { a } })
+}
+
+fn unique(xs) {
+  xs |> reduce([], fn(acc, x) {
+    if contains(acc, x) { acc } else { concat(acc, [x]) }
+  })
+}

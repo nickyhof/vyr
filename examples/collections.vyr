@@ -1,0 +1,40 @@
+// collections.vyr — Showcase: complete collections + type system
+
+fn double(x: int): int {
+  x * 2
+}
+
+fn is_even(x: int): bool {
+  x - (x / 2) * 2 == 0
+}
+
+fn abs(x: int): int {
+  if x >= 0 { x } else { 0 - x }
+}
+
+fn greet(name: string): string {
+  "Hello, " + name + "!"
+}
+
+fn main() {
+  // Filter + map pipeline
+  10 |> range
+    |> filter(fn(x) { x > 0 })
+    |> map(fn(x) { x * x })
+    |> print
+
+  // Reduce: sum an array
+  [1, 2, 3, 4, 5] |> reduce(0, fn(acc, x) { acc + x }) |> print
+
+  // If/else with comparisons
+  0 - 7 |> abs |> print
+
+  // String concat in typed function
+  "World" |> greet |> print
+
+  // Array operations
+  let nums = [10, 20, 30, 40, 50]
+  nums |> head |> print
+  nums |> tail |> print
+  nums |> length |> print
+}

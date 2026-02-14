@@ -1,0 +1,22 @@
+fn double(x) {
+  x * 2
+}
+
+fn add_ten(x) {
+  x + 10
+}
+
+fn main() {
+  // Fan-out: pipe into multiple transforms
+  5 |> [double, add_ten] |> print
+
+  // Map: transform each element with a lambda
+  [1, 2, 3, 4, 5] |> map(fn(x) { x * x }) |> print
+
+  // Match: data-driven branching in a pipe
+  42 |> match {
+    0 => "zero"
+    42 => "the answer"
+    _ => "something else"
+  } |> print
+}

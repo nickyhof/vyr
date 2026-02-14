@@ -1,0 +1,31 @@
+// stdlib.vyr — Showcase: using the Vyr standard library
+
+import "std/math"
+import "std/string"
+import "std/collections"
+
+fn main() {
+  // Math: recursion, pipes, composition
+  5 |> factorial |> print
+  pow(2, 10) |> print
+  gcd(48, 18) |> print
+
+  // String: closures enable chars and capitalize
+  repeat("*", 5) |> print
+  "hello" |> capitalize |> print
+  "abc" |> chars |> print
+  pad_left("42", 5, "0") |> print
+
+  // Collections: closures enable zip, enumerate, chunk
+  let names = ["alice", "bob", "carol"]
+  let scores = [95, 87, 92]
+  zip(names, scores) |> print
+
+  ["a", "b", "c"] |> enumerate |> print
+
+  [1, 2, 3, 4, 5, 6, 7] |> chunk(3) |> print
+
+  [5, 2, 8, 1, 9, 3] |> sort |> print
+  [1, 2, 2, 3, 3, 3] |> unique |> print
+  [1, 2, 3, 4, 5] |> take(3) |> print
+}

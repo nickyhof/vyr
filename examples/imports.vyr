@@ -1,0 +1,14 @@
+// imports.vyr — Showcase: importing from a library file
+
+import "math"
+
+fn main() {
+  // Use imported functions
+  [1, 2, 3, 4, 5] |> map(square) |> print
+
+  0 - 42 |> abs |> print
+
+  150 |> clamp |> print
+
+  [10, 20, 30] |> sum |> print
+}

@@ -1,0 +1,17 @@
+// math.vyr — A reusable math library for Vyr
+
+fn square(x: int): int {
+  x * x
+}
+
+fn abs(x: int): int {
+  if x >= 0 { x } else { 0 - x }
+}
+
+fn clamp(x: int): int {
+  if x < 0 { 0 } else { if x > 100 { 100 } else { x } }
+}
+
+fn sum(xs: array): int {
+  xs |> reduce(0, fn(acc, x) { acc + x })
+}
