@@ -681,6 +681,14 @@ func b_reduce(args ...any) any {
 	return acc
 }
 
+func b_push(args ...any) any {
+	arr := args[0].([]any)
+	result := make([]any, len(arr)+1)
+	copy(result, arr)
+	result[len(arr)] = args[1]
+	return result
+}
+
 // Suppress unused import warnings.
 var _ = os.ReadFile
 var _ = sort.Strings

@@ -603,3 +603,64 @@ fn main() {
   "hello" |> check |> print
 }`, "42\nnot a Foo")
 }
+
+// --- Return Statements ---
+func TestReturnEarly(t *testing.T) {
+	expect(t, `fn check(x) {
+  if x > 10 {
+    return "big"
+  }
+  "small"
+}
+fn main() {
+  check(5) |> print
+  check(20) |> print
+}`, "small\nbig")
+}
+
+func TestReturnInWhile(t *testing.T) {
+	expect(t, `fn find_first_over(xs, threshold) {
+  let mut i = 0
+  while i < length(xs) {
+    if index(xs, i) > threshold {
+      return index(xs, i)
+    }
+    i = i + 1
+  }
+  return 0 - 1
+}
+fn main() {
+  find_first_over([1, 5, 12, 3], 10) |> print
+  find_first_over([1, 2, 3], 10) |> print
+}`, "12\n-1")
+}
+
+func TestReturnNil(t *testing.T) {
+	expect(t, `fn do_nothing() {
+  return
+}
+fn main() {
+  let x = do_nothing()
+  type_of(x) |> print
+}`, "nil")
+}
+
+// --- Push Builtin ---
+func TestPushBasic(t *testing.T) {
+	expect(t, `fn main() {
+  let xs = [1, 2, 3]
+  push(xs, 4) |> print
+}`, "[1, 2, 3, 4]")
+}
+
+func TestPushInLoop(t *testing.T) {
+	expect(t, `fn main() {
+  let mut result = []
+  let mut i = 0
+  while i < 5 {
+    result = push(result, i * i)
+    i = i + 1
+  }
+  result |> print
+}`, "[0, 1, 4, 9, 16]")
+}

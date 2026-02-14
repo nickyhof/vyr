@@ -20,7 +20,7 @@ var builtinSet = map[string]bool{
 	"read_file": true, "write_file": true, "file_exists": true, "append_file": true,
 	"format": true, "ok": true, "err": true, "is_ok": true, "is_err": true,
 	"unwrap": true, "unwrap_or": true, "try_read_file": true, "try_to_int": true,
-	"map": true, "filter": true, "reduce": true,
+	"map": true, "filter": true, "reduce": true, "push": true,
 }
 
 // Generator walks a Vyr AST and emits Go source code.
@@ -192,6 +192,13 @@ func (g *Generator) emitStatement(node parser.Node) {
 		g.writef("v_%s = %s\n", n.Name, g.exprString(n.Value))
 	case *parser.WhileExpr:
 		g.emitWhileStmt(n)
+	case *parser.ReturnStmt:
+		g.writeIndent()
+		if n.Value == nil {
+			g.writef("return nil\n")
+		} else {
+			g.writef("return %s\n", g.exprString(n.Value))
+		}
 	case *parser.IfExpr:
 		g.emitIfStmt(n, false)
 	default:
@@ -215,6 +222,8 @@ func (g *Generator) emitReturnNode(node parser.Node) {
 		g.emitWhileStmt(n)
 		g.writeIndent()
 		g.writef("return nil\n")
+	case *parser.ReturnStmt:
+		g.emitStatement(n) // ReturnStmt emitStatement already emits 'return'
 	case *parser.IfExpr:
 		g.emitIfStmt(n, true)
 	case *parser.MatchExpr:

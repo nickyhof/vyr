@@ -196,3 +196,10 @@ type TypePattern struct {
 }
 
 func (tp *TypePattern) nodeType() string { return "TypePattern" }
+
+// ReturnStmt represents an early return: return expr
+type ReturnStmt struct {
+	Value Node // nil means return nil
+}
+
+func (r *ReturnStmt) nodeType() string { return "ReturnStmt" }

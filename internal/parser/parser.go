@@ -146,6 +146,9 @@ func (p *Parser) parseStmt() (Node, error) {
 	if p.check(lexer.WHILE) {
 		return p.parseWhile()
 	}
+	if p.check(lexer.RETURN) {
+		return p.parseReturn()
+	}
 	// Check for assignment: ident = expr
 	if p.check(lexer.IDENT) && p.peekType() == lexer.EQUAL {
 		name := p.current().Literal
@@ -645,4 +648,18 @@ func (p *Parser) parseMatchPattern() (Node, error) {
 		return &TypePattern{TypeName: typeName, Binding: binding}, nil
 	}
 	return p.parsePrimary()
+}
+
+// parseReturn parses: return [expr]
+func (p *Parser) parseReturn() (*ReturnStmt, error) {
+	p.advance() // consume 'return'
+	// If the next token starts a new statement or ends a block, return nil
+	if p.check(lexer.RBRACE) || p.atEnd() {
+		return &ReturnStmt{Value: nil}, nil
+	}
+	value, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	return &ReturnStmt{Value: value}, nil
 }

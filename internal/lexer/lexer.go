@@ -316,7 +316,7 @@ var keywords = map[string]TokenType{
 	"true": TRUE, "false": FALSE,
 	"if": IF, "else": ELSE,
 	"import": IMPORT,
-	"while":  WHILE, "mut": MUT, "struct": STRUCT,
+	"while":  WHILE, "mut": MUT, "struct": STRUCT, "return": RETURN,
 }
 
 func (l *Lexer) readIdent(line, col int) Token {
