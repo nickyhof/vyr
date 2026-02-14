@@ -77,14 +77,6 @@ fn chunk(xs, size) {
   })
 }
 
-fn sum(xs) {
-  xs |> reduce(0, fn(a, x) { a + x })
-}
-
-fn product(xs) {
-  xs |> reduce(1, fn(a, x) { a * x })
-}
-
 fn max_of(xs) {
   let h = xs |> head
   xs |> reduce(h, fn(a, x) { if x > a { x } else { a } })

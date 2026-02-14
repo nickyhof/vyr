@@ -1,20 +1,21 @@
 # Vyr
 
-A functional, pipe-first programming language built in Go.
+A functional, pipe-first programming language that transpiles to Go.
 
-Vyr emphasizes data flow through pipes (`|>`), closures, pattern matching, and a growing standard library — all compiled to bytecode and run on a custom VM.
+Vyr emphasizes data flow through pipes (`|>`), closures, pattern matching, and a growing standard library — all transpiled to Go for native performance.
 
 ## Quick Start
 
 ```bash
-# Build
+# Build the compiler
 make build
 
 # Run a program
 ./vyr run examples/hello.vyr
 
-# Interactive REPL
-./vyr repl
+# Compile to a native binary
+./vyr build examples/hello.vyr -o hello
+./hello
 ```
 
 ## Features
@@ -28,6 +29,7 @@ make build
 - **Result type** — `ok(val)`, `err(msg)` for safe error handling
 - **Gradual typing** — optional type annotations: `fn double(x: int): int { x * 2 }`
 - **Standard library** — `std/math`, `std/string`, `std/collections`, `std/io`, `std/result`
+- **Go transpiler** — compiles to readable Go source; native binaries via `go build`
 
 ## Examples
 
@@ -67,13 +69,12 @@ fn main() {
 ## Project Structure
 
 ```
-cmd/vyr/       CLI entrypoint (run, repl)
+cmd/vyr/       CLI entrypoint (run, build)
 internal/      Compiler pipeline
   lexer/         Tokenizer
   parser/        AST construction
   checker/       Gradual type checker
-  compiler/      Bytecode compiler
-  vm/            Virtual machine
+  codegen/       Go code generator
   loader/        Import resolution
 std/           Standard library (.vyr files)
 examples/      Example programs

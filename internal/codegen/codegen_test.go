@@ -1,10 +1,12 @@
-package vm
+package codegen
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/nickyhof/vyr/internal/compiler"
 	"github.com/nickyhof/vyr/internal/lexer"
 	"github.com/nickyhof/vyr/internal/parser"
 )
@@ -16,16 +18,37 @@ func runProgram(t *testing.T, input string) string {
 	if err != nil {
 		t.Fatalf("parse error: %v", err)
 	}
-	code, err := compiler.New().Compile(prog)
+
+	goCode := Generate(prog)
+
+	tmpDir, err := os.MkdirTemp("", "vyr-test-*")
 	if err != nil {
-		t.Fatalf("compile error: %v", err)
+		t.Fatalf("failed to create temp dir: %v", err)
 	}
-	var out strings.Builder
-	vm := NewWithOutput(code, &out)
-	if err := vm.Run(); err != nil {
-		t.Fatalf("runtime error: %v", err)
+	defer os.RemoveAll(tmpDir)
+
+	mainFile := filepath.Join(tmpDir, "main.go")
+	if err := os.WriteFile(mainFile, []byte(goCode), 0644); err != nil {
+		t.Fatalf("failed to write generated code: %v", err)
 	}
-	return strings.TrimSpace(out.String())
+
+	cmd := exec.Command("go", "run", mainFile)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("go run failed: %v\nstderr: %s\ngenerated code:\n%s", err, stderr.String(), goCode)
+	}
+
+	return strings.TrimSpace(stdout.String())
+}
+
+func expect(t *testing.T, input, want string) {
+	t.Helper()
+	got := runProgram(t, input)
+	if got != want {
+		t.Errorf("output = %q, want %q", got, want)
+	}
 }
 
 // --- Milestone 1: Pipes ---
@@ -267,7 +290,6 @@ func TestClosureInFilter(t *testing.T) {
 }
 
 func TestClosureWithBuiltins(t *testing.T) {
-	// char_at captures the string from outer scope
 	expect(t, `fn main() {
   let s = "abc"
   let len = s |> length
@@ -276,7 +298,6 @@ func TestClosureWithBuiltins(t *testing.T) {
 }
 
 func TestClosureWithIndex(t *testing.T) {
-	// index captures the array from outer scope
 	expect(t, `fn main() {
   let arr = [10, 20, 30]
   let len = arr |> length
@@ -430,7 +451,6 @@ func TestInterpEscaped(t *testing.T) {
 }
 
 func TestInterpPlainString(t *testing.T) {
-	// Plain strings without interpolation should still work
 	expect(t, `fn main() { "no interpolation here" |> print }`, "no interpolation here")
 }
 
@@ -450,12 +470,4 @@ func TestInterpIntCoercion(t *testing.T) {
   let n = 42
   "the answer is ${n}" |> print
 }`, "the answer is 42")
-}
-
-func expect(t *testing.T, input, want string) {
-	t.Helper()
-	got := runProgram(t, input)
-	if got != want {
-		t.Errorf("output = %q, want %q", got, want)
-	}
 }
