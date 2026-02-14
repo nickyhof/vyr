@@ -589,5 +589,5 @@ fn emit_struct_decl(decl) {
 // This is the same preamble as in the Go compiler.
 
 fn get_preamble() {
-  read_file("internal/codegen/preamble_text.txt")
+  read_file("runtime/preamble.tmpl")
 }

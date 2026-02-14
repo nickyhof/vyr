@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# vyr — Convenience wrapper around the vyrc compiler.
+# Usage:
+#   vyr run  <file.vyr> [args...]    Compile and run
+#   vyr build <file.vyr> [-o out]    Compile and build binary
+#   vyr compile <file.vyr> [out.go]  Compile to Go source
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+VYRC="${SCRIPT_DIR}/vyrc"
+
+if [[ ! -x "$VYRC" ]]; then
+  echo "Error: vyrc not found at $VYRC" >&2
+  echo "Run 'make bootstrap' first." >&2
+  exit 1
+fi
+
+cmd="${1:-}"
+shift || true
+
+case "$cmd" in
+  run)
+    file="${1:?usage: vyr run <file.vyr> [args...]}"
+    shift
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+    "$VYRC" "$file" "$tmpdir/main.go"
+    go run "$tmpdir/main.go" "$@"
+    ;;
+  build)
+    file="${1:?usage: vyr build <file.vyr> [-o output]}"
+    shift
+    output=""
+    if [[ "${1:-}" == "-o" ]]; then
+      output="${2:?missing output name after -o}"
+      shift 2
+    fi
+    if [[ -z "$output" ]]; then
+      output="$(basename "${file%.vyr}")"
+    fi
+    tmpdir="$(mktemp -d)"
+    trap 'rm -rf "$tmpdir"' EXIT
+    "$VYRC" "$file" "$tmpdir/main.go"
+    go build -o "$(pwd)/$output" "$tmpdir/main.go"
+    echo "Built $output"
+    ;;
+  compile)
+    file="${1:?usage: vyr compile <file.vyr> [output.go]}"
+    shift
+    output="${1:-$(basename "${file%.vyr}").go}"
+    "$VYRC" "$file" "$output"
+    ;;
+  *)
+    echo "Usage: vyr <run|build|compile> <file.vyr>" >&2
+    exit 1
+    ;;
+esac

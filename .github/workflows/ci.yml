@@ -17,28 +17,10 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version-file: go.mod
+          go-version: stable
 
-      - name: Build
-        run: go build ./...
+      - name: Build vyrc
+        run: go build -o vyrc bootstrap/vyrc.go
 
-      - name: Test
-        run: go test -race -v ./...
-
-      - name: Vet
-        run: go vet ./...
-
-  lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
-
-      - name: golangci-lint
-        run: golangci-lint run ./...
+      - name: Test examples
+        run: make test

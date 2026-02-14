@@ -2,13 +2,13 @@
 
 A functional, pipe-first programming language that transpiles to Go.
 
-Vyr emphasizes data flow through pipes (`|>`), closures, pattern matching, and a growing standard library — all transpiled to Go for native performance.
+Vyr emphasizes data flow through pipes (`|>`), closures, pattern matching, and a growing standard library — all compiled to Go for native performance. The compiler is **self-hosted**: written in Vyr itself.
 
 ## Quick Start
 
 ```bash
-# Build the compiler
-make build
+# Build the compiler from source
+go build -o vyrc bootstrap/vyrc.go
 
 # Run a program
 ./vyr run examples/hello.vyr
@@ -16,6 +16,10 @@ make build
 # Compile to a native binary
 ./vyr build examples/hello.vyr -o hello
 ./hello
+
+# Or use vyrc directly
+./vyrc examples/hello.vyr hello.go
+go run hello.go
 ```
 
 ## Features
@@ -24,12 +28,15 @@ make build
 - **String interpolation** — `"hello ${name}, you are ${age} years old"`
 - **First-class functions & closures** — `let add5 = make_adder(5)`
 - **Pattern matching** — `x |> match { 0 => "zero" _ => "other" }`
+- **Structs** — `struct Point { x, y }` with dot access
 - **Fan-out** — broadcast a value: `x |> [f, g, h]`
 - **Hashmaps** — `#{name: "alice", age: 30}` with dot access
 - **Result type** — `ok(val)`, `err(msg)` for safe error handling
-- **Gradual typing** — optional type annotations: `fn double(x: int): int { x * 2 }`
+- **Mutable variables** — `let mut x = 0`
+- **While loops** — `while x < 10 { ... }`
+- **Return statements** — `return value`
 - **Standard library** — `std/math`, `std/string`, `std/collections`, `std/io`, `std/result`
-- **Go transpiler** — compiles to readable Go source; native binaries via `go build`
+- **Self-hosted compiler** — the compiler is written in Vyr
 
 ## Examples
 
@@ -45,14 +52,16 @@ fn main() {
 ```
 
 ```
-// String interpolation + closures
-fn greet(greeting) {
-  fn(name) { "${greeting}, ${name}!" }
-}
+// Structs + pattern matching
+struct Circle { center, radius }
+struct Rect { origin, width, height }
 
-fn main() {
-  let hello = greet("Hello")
-  hello("world") |> print  // Hello, world!
+fn area(shape) {
+  shape |> match {
+    Circle(c) => c.radius * c.radius * 3
+    Rect(r) => r.width * r.height
+    _ => 0
+  }
 }
 ```
 
@@ -69,28 +78,35 @@ fn main() {
 ## Project Structure
 
 ```
-cmd/vyr/       CLI entrypoint (run, build)
-internal/      Compiler pipeline
-  lexer/         Tokenizer
-  parser/        AST construction
-  checker/       Gradual type checker
-  codegen/       Go code generator
-  loader/        Import resolution
-std/           Standard library (.vyr files)
-examples/      Example programs
+bootstrap/         Self-hosted compiler (written in Vyr)
+  lexer.vyr          Tokenizer
+  parser.vyr         Recursive-descent parser
+  codegen.vyr        Go code generator
+  main.vyr           Compiler entry point
+  vyrc.go            Compiled Go source (checked in for bootstrapping)
+runtime/           Go runtime template embedded in generated programs
+std/               Standard library (.vyr files)
+examples/          Example programs
+vyr                Shell script CLI (run, build, compile)
 ```
 
 ## Development
 
 ```bash
-make test       # Run all tests
-make cover      # Generate coverage report
-make fmt        # Format code
-make vet        # Vet code
-make lint       # Run staticcheck
-make check      # fmt + vet + test
+make bootstrap   # Rebuild vyrc from Vyr source (requires existing vyrc)
+make test        # Compile and run example programs
+make clean       # Remove built binaries
+```
+
+### Bootstrapping
+
+The compiler compiles itself. `bootstrap/vyrc.go` is the compiled Go form of the compiler, checked into the repo so you can always build from a fresh clone:
+
+```bash
+go build -o vyrc bootstrap/vyrc.go   # Build compiler from checked-in source
+make bootstrap                       # Rebuild using the Vyr source files
 ```
 
 ## License
 
-Apache 2.0 — see [LICENSE](LICENSE).
+Apache 2.0
