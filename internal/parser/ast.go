@@ -71,10 +71,11 @@ type CallExpr struct {
 
 func (c *CallExpr) nodeType() string { return "CallExpr" }
 
-// LetStmt represents a variable binding: let name = expr
+// LetStmt represents a variable binding: let name = expr (or let mut name = expr)
 type LetStmt struct {
-	Name  string
-	Value Node
+	Name    string
+	Value   Node
+	Mutable bool
 }
 
 func (l *LetStmt) nodeType() string { return "LetStmt" }
@@ -163,3 +164,35 @@ type InterpLit struct {
 }
 
 func (il *InterpLit) nodeType() string { return "InterpLit" }
+
+// WhileExpr represents a while loop: while cond { body }
+type WhileExpr struct {
+	Condition Node
+	Body      []Node
+}
+
+func (w *WhileExpr) nodeType() string { return "WhileExpr" }
+
+// AssignStmt represents variable reassignment: name = expr
+type AssignStmt struct {
+	Name  string
+	Value Node
+}
+
+func (a *AssignStmt) nodeType() string { return "AssignStmt" }
+
+// StructDecl declares a struct type: struct Name { field1, field2 }
+type StructDecl struct {
+	Name   string
+	Fields []string
+}
+
+func (s *StructDecl) nodeType() string { return "StructDecl" }
+
+// TypePattern is a pattern that matches on struct type: TypeName(binding)
+type TypePattern struct {
+	TypeName string
+	Binding  string
+}
+
+func (tp *TypePattern) nodeType() string { return "TypePattern" }

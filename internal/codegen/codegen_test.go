@@ -471,3 +471,135 @@ func TestInterpIntCoercion(t *testing.T) {
   "the answer is ${n}" |> print
 }`, "the answer is 42")
 }
+
+// --- While Loops + Mutable Variables ---
+func TestWhileBasic(t *testing.T) {
+	expect(t, `fn main() {
+  let mut i = 0
+  while i < 5 {
+    i = i + 1
+  }
+  i |> print
+}`, "5")
+}
+
+func TestWhileAccumulate(t *testing.T) {
+	expect(t, `fn main() {
+  let mut sum = 0
+  let mut i = 1
+  while i <= 10 {
+    sum = sum + i
+    i = i + 1
+  }
+  sum |> print
+}`, "55")
+}
+
+func TestWhileWithPrint(t *testing.T) {
+	expect(t, `fn main() {
+  let mut i = 0
+  while i < 3 {
+    i |> print
+    i = i + 1
+  }
+}`, "0\n1\n2")
+}
+
+func TestMutableReassign(t *testing.T) {
+	expect(t, `fn main() {
+  let mut x = "hello"
+  x = "world"
+  x |> print
+}`, "world")
+}
+
+func TestWhileNested(t *testing.T) {
+	expect(t, `fn main() {
+  let mut total = 0
+  let mut i = 0
+  while i < 3 {
+    let mut j = 0
+    while j < 3 {
+      total = total + 1
+      j = j + 1
+    }
+    i = i + 1
+  }
+  total |> print
+}`, "9")
+}
+
+// --- Multi-line Strings ---
+func TestTripleQuoteString(t *testing.T) {
+	expect(t, "fn main() {\n  let s = \"\"\"\nline 1\nline 2\nline 3\n\"\"\"\n  s |> print\n}", "line 1\nline 2\nline 3")
+}
+
+func TestTripleQuoteSingleLine(t *testing.T) {
+	expect(t, `fn main() { """hello""" |> print }`, "hello")
+}
+
+// --- Struct Declarations ---
+func TestStructBasic(t *testing.T) {
+	expect(t, `struct Point { x, y }
+fn main() {
+  let p = Point(10, 20)
+  p.x |> print
+  p.y |> print
+}`, "10\n20")
+}
+
+func TestStructTypeField(t *testing.T) {
+	expect(t, `struct Token { kind, value }
+fn main() {
+  let t = Token("INT", "42")
+  t.kind |> print
+  t.value |> print
+}`, "INT\n42")
+}
+
+func TestStructPassToFunction(t *testing.T) {
+	expect(t, `struct Point { x, y }
+fn sum_point(p) { p.x + p.y }
+fn main() {
+  Point(3, 4) |> sum_point |> print
+}`, "7")
+}
+
+func TestStructInArray(t *testing.T) {
+	expect(t, `struct Pair { a, b }
+fn main() {
+  let items = [Pair(1, 2), Pair(3, 4)]
+  items |> map(fn(p) { p.a + p.b }) |> print
+}`, "[3, 7]")
+}
+
+// --- Type-Match Patterns ---
+func TestTypeMatch(t *testing.T) {
+	expect(t, `struct Dog { name }
+struct Cat { name }
+fn speak(animal) {
+  animal |> match {
+    Dog(d) => d.name + " says woof"
+    Cat(c) => c.name + " says meow"
+    _ => "unknown"
+  }
+}
+fn main() {
+  Dog("Rex") |> speak |> print
+  Cat("Whiskers") |> speak |> print
+}`, "Rex says woof\nWhiskers says meow")
+}
+
+func TestTypeMatchWildcard(t *testing.T) {
+	expect(t, `struct Foo { val }
+fn check(x) {
+  x |> match {
+    Foo(f) => f.val
+    _ => "not a Foo"
+  }
+}
+fn main() {
+  Foo(42) |> check |> print
+  "hello" |> check |> print
+}`, "42\nnot a Foo")
+}

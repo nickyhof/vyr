@@ -40,6 +40,9 @@ func (p *Parser) parseDecl() (Node, error) {
 	if p.check(lexer.FN) {
 		return p.parseFnDecl()
 	}
+	if p.check(lexer.STRUCT) {
+		return p.parseStructDecl()
+	}
 	return nil, p.errorf("expected declaration, got %s", p.current())
 }
 
@@ -140,11 +143,31 @@ func (p *Parser) parseStmt() (Node, error) {
 	if p.check(lexer.LET) {
 		return p.parseLet()
 	}
+	if p.check(lexer.WHILE) {
+		return p.parseWhile()
+	}
+	// Check for assignment: ident = expr
+	if p.check(lexer.IDENT) && p.peekType() == lexer.EQUAL {
+		name := p.current().Literal
+		p.advance() // consume ident
+		p.advance() // consume =
+		value, err := p.parseExpr()
+		if err != nil {
+			return nil, err
+		}
+		return &AssignStmt{Name: name, Value: value}, nil
+	}
 	return p.parseExpr()
 }
 
 func (p *Parser) parseLet() (*LetStmt, error) {
 	p.advance() // consume 'let'
+	// Check for 'mut' keyword
+	mutable := false
+	if p.check(lexer.MUT) {
+		mutable = true
+		p.advance()
+	}
 	if !p.check(lexer.IDENT) {
 		return nil, p.errorf("expected variable name after 'let', got %s", p.current())
 	}
@@ -157,7 +180,7 @@ func (p *Parser) parseLet() (*LetStmt, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &LetStmt{Name: name, Value: value}, nil
+	return &LetStmt{Name: name, Value: value, Mutable: mutable}, nil
 }
 
 // Expression precedence (lowest → highest):
@@ -427,7 +450,7 @@ func (p *Parser) parseMatch() (*MatchExpr, error) {
 	}
 	var arms []MatchArm
 	for !p.check(lexer.RBRACE) && !p.atEnd() {
-		pattern, err := p.parsePrimary()
+		pattern, err := p.parseMatchPattern()
 		if err != nil {
 			return nil, err
 		}
@@ -545,4 +568,81 @@ func (p *Parser) errorf(format string, args ...interface{}) error {
 	tok := p.current()
 	prefix := fmt.Sprintf("parse error at line %d, col %d: ", tok.Line, tok.Col)
 	return fmt.Errorf(prefix+format, args...)
+}
+
+// peekType returns the token type of the next token without advancing.
+func (p *Parser) peekType() lexer.TokenType {
+	if p.pos+1 < len(p.tokens) {
+		return p.tokens[p.pos+1].Type
+	}
+	return lexer.EOF
+}
+
+// parseWhile parses: while condition { body }
+func (p *Parser) parseWhile() (*WhileExpr, error) {
+	p.advance() // consume 'while'
+	condition, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+	body, err := p.parseBlock()
+	if err != nil {
+		return nil, err
+	}
+	return &WhileExpr{Condition: condition, Body: body}, nil
+}
+
+// parseStructDecl parses: struct Name { field1, field2, ... }
+func (p *Parser) parseStructDecl() (*StructDecl, error) {
+	p.advance() // consume 'struct'
+	if !p.check(lexer.IDENT) {
+		return nil, p.errorf("expected struct name, got %s", p.current())
+	}
+	name := p.current().Literal
+	p.advance()
+	if err := p.expect(lexer.LBRACE); err != nil {
+		return nil, err
+	}
+	var fields []string
+	for !p.check(lexer.RBRACE) && !p.atEnd() {
+		if !p.check(lexer.IDENT) {
+			return nil, p.errorf("expected field name, got %s", p.current())
+		}
+		fields = append(fields, p.current().Literal)
+		p.advance()
+		// Optional type annotation (skip for now)
+		if p.check(lexer.COLON) {
+			p.advance()
+			if !p.check(lexer.IDENT) {
+				return nil, p.errorf("expected type after ':', got %s", p.current())
+			}
+			p.advance() // skip type name
+		}
+		if p.check(lexer.COMMA) {
+			p.advance()
+		}
+	}
+	if err := p.expect(lexer.RBRACE); err != nil {
+		return nil, err
+	}
+	return &StructDecl{Name: name, Fields: fields}, nil
+}
+
+// parseMatchPattern parses a match arm pattern, including type patterns: TypeName(binding)
+func (p *Parser) parseMatchPattern() (Node, error) {
+	if p.check(lexer.IDENT) && p.peekType() == lexer.LPAREN {
+		typeName := p.current().Literal
+		p.advance() // consume type name
+		p.advance() // consume (
+		if !p.check(lexer.IDENT) {
+			return nil, p.errorf("expected binding name in type pattern, got %s", p.current())
+		}
+		binding := p.current().Literal
+		p.advance()
+		if err := p.expect(lexer.RPAREN); err != nil {
+			return nil, err
+		}
+		return &TypePattern{TypeName: typeName, Binding: binding}, nil
+	}
+	return p.parsePrimary()
 }

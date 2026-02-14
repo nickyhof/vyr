@@ -24,6 +24,9 @@ const (
 	IMPORT // import
 	IF     // if
 	ELSE   // else
+	WHILE  // while
+	MUT    // mut
+	STRUCT // struct
 
 	// Operators
 	PIPE  // |>
@@ -60,6 +63,7 @@ var tokenNames = map[TokenType]string{
 	IDENT: "IDENT", STRING: "STRING", INT: "INT",
 	FN: "FN", LET: "LET", MATCH: "MATCH",
 	TRUE: "TRUE", FALSE: "FALSE", IF: "IF", ELSE: "ELSE", IMPORT: "IMPORT",
+	WHILE: "WHILE", MUT: "MUT", STRUCT: "STRUCT",
 	PIPE: "PIPE", PLUS: "PLUS", MINUS: "MINUS", STAR: "STAR", SLASH: "SLASH",
 	EQUAL: "EQUAL", ARROW: "ARROW",
 	EQ: "EQ", NEQ: "NEQ", LT: "LT", GT: "GT", LTE: "LTE", GTE: "GTE",

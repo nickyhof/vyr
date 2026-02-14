@@ -42,6 +42,8 @@ func (l *Lexer) nextToken() Token {
 	case ch == '/' && l.peek() == '/':
 		l.skipLineComment()
 		return l.nextToken()
+	case ch == '"' && l.peekN(1) == '"' && l.peekN(2) == '"':
+		return l.readTripleQuoteString(sl, sc)
 	case ch == '"':
 		return l.readString(sl, sc)
 
@@ -161,6 +163,14 @@ func (l *Lexer) peek() rune {
 	return 0
 }
 
+func (l *Lexer) peekN(n int) rune {
+	idx := l.pos + n
+	if idx < len(l.input) {
+		return l.input[idx]
+	}
+	return 0
+}
+
 func (l *Lexer) skipWhitespace() {
 	for l.pos < len(l.input) && unicode.IsSpace(l.input[l.pos]) {
 		l.advance()
@@ -171,6 +181,34 @@ func (l *Lexer) skipLineComment() {
 	for l.pos < len(l.input) && l.input[l.pos] != '\n' {
 		l.advance()
 	}
+}
+
+// readTripleQuoteString reads a """ ... """ multi-line string literal.
+func (l *Lexer) readTripleQuoteString(line, col int) Token {
+	// Skip opening """
+	l.advance()
+	l.advance()
+	l.advance()
+
+	// Skip optional leading newline
+	if l.pos < len(l.input) && l.input[l.pos] == '\n' {
+		l.advance()
+	}
+
+	var buf []rune
+	for l.pos < len(l.input) {
+		if l.input[l.pos] == '"' && l.peekN(1) == '"' && l.peekN(2) == '"' {
+			// Found closing """
+			l.advance()
+			l.advance()
+			l.advance()
+			return Token{Type: STRING, Literal: string(buf), Line: line, Col: col}
+		}
+		buf = append(buf, l.input[l.pos])
+		l.advance()
+	}
+	// Unterminated — return what we have
+	return Token{Type: STRING, Literal: string(buf), Line: line, Col: col}
 }
 
 // readStringBody reads string content until it hits a closing quote or an
@@ -278,6 +316,7 @@ var keywords = map[string]TokenType{
 	"true": TRUE, "false": FALSE,
 	"if": IF, "else": ELSE,
 	"import": IMPORT,
+	"while":  WHILE, "mut": MUT, "struct": STRUCT,
 }
 
 func (l *Lexer) readIdent(line, col int) Token {

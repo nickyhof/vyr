@@ -37,10 +37,13 @@ func Generate(prog *parser.Program) string {
 		userFuncs: make(map[string]bool),
 	}
 
-	// First pass: collect user function names.
+	// First pass: collect user function names and struct names.
 	for _, decl := range prog.Decls {
-		if fn, ok := decl.(*parser.FnDecl); ok {
-			g.userFuncs[fn.Name] = true
+		switch d := decl.(type) {
+		case *parser.FnDecl:
+			g.userFuncs[d.Name] = true
+		case *parser.StructDecl:
+			g.userFuncs[d.Name] = true // struct constructors are user functions
 		}
 	}
 
@@ -48,8 +51,11 @@ func Generate(prog *parser.Program) string {
 	g.emitPreamble()
 
 	for _, decl := range prog.Decls {
-		if fn, ok := decl.(*parser.FnDecl); ok {
-			g.emitFnDecl(fn)
+		switch d := decl.(type) {
+		case *parser.FnDecl:
+			g.emitFnDecl(d)
+		case *parser.StructDecl:
+			g.emitStructDecl(d)
 		}
 	}
 
@@ -122,6 +128,36 @@ func (g *Generator) emitFnDecl(fn *parser.FnDecl) {
 	g.writeln("}")
 }
 
+// emitStructDecl generates a constructor function for a struct type.
+// struct Point { x, y } → func fn_Point(args ...any) any { return map[string]any{...} }
+func (g *Generator) emitStructDecl(s *parser.StructDecl) {
+	g.writeln("")
+	g.writef("func fn_%s(args ...any) any {\n", s.Name)
+	g.indent++
+	g.writeIndent()
+	g.writef("return map[string]any{")
+	g.writef("\"__type\": %s", strconv.Quote(s.Name))
+	for i, field := range s.Fields {
+		g.writef(", %s: args[%d]", strconv.Quote(field), i)
+	}
+	g.writef("}\n")
+	g.indent--
+	g.writeln("}")
+}
+
+// emitWhileStmt generates a Go for-loop from a while expression.
+func (g *Generator) emitWhileStmt(n *parser.WhileExpr) {
+	g.writeIndent()
+	g.writef("for isTruthy(%s) {\n", g.exprString(n.Condition))
+	g.indent++
+	for _, stmt := range n.Body {
+		g.emitStatement(stmt)
+	}
+	g.indent--
+	g.writeIndent()
+	g.writef("}\n")
+}
+
 // ---------- body emission ----------
 
 func (g *Generator) emitBody(body []parser.Node) {
@@ -146,7 +182,16 @@ func (g *Generator) emitStatement(node parser.Node) {
 	case *parser.LetStmt:
 		g.writeIndent()
 		g.defineLocal(n.Name)
-		g.writef("v_%s := %s\n", n.Name, g.exprString(n.Value))
+		if n.Mutable {
+			g.writef("var v_%s any = %s\n", n.Name, g.exprString(n.Value))
+		} else {
+			g.writef("v_%s := %s\n", n.Name, g.exprString(n.Value))
+		}
+	case *parser.AssignStmt:
+		g.writeIndent()
+		g.writef("v_%s = %s\n", n.Name, g.exprString(n.Value))
+	case *parser.WhileExpr:
+		g.emitWhileStmt(n)
 	case *parser.IfExpr:
 		g.emitIfStmt(n, false)
 	default:
@@ -160,6 +205,14 @@ func (g *Generator) emitReturnNode(node parser.Node) {
 	switch n := node.(type) {
 	case *parser.LetStmt:
 		g.emitStatement(n)
+		g.writeIndent()
+		g.writef("return nil\n")
+	case *parser.AssignStmt:
+		g.emitStatement(n)
+		g.writeIndent()
+		g.writef("return nil\n")
+	case *parser.WhileExpr:
+		g.emitWhileStmt(n)
 		g.writeIndent()
 		g.writef("return nil\n")
 	case *parser.IfExpr:
@@ -239,6 +292,20 @@ func (g *Generator) emitMatchReturn(n *parser.MatchExpr) {
 			g.writef("return %s\n", g.exprString(arm.Body))
 			return
 		}
+		if tp, ok := arm.Pattern.(*parser.TypePattern); ok {
+			g.writeIndent()
+			g.writef("if _tv, _tvOk := %s.(map[string]any); _tvOk && _tv[\"__type\"] == %s {\n", subject, strconv.Quote(tp.TypeName))
+			g.indent++
+			g.defineLocal(tp.Binding)
+			g.writeIndent()
+			g.writef("v_%s := %s\n", tp.Binding, subject)
+			g.writeIndent()
+			g.writef("return %s\n", g.exprString(arm.Body))
+			g.indent--
+			g.writeIndent()
+			g.writef("}\n")
+			continue
+		}
 		g.writeIndent()
 		g.writef("if valuesEqual(%s, %s) {\n", subject, g.exprString(arm.Pattern))
 		g.indent++
@@ -283,6 +350,10 @@ func (g *Generator) exprString(node parser.Node) string {
 	case *parser.IntLit:
 		return fmt.Sprintf("int64(%d)", n.Value)
 	case *parser.StringLit:
+		if strings.Contains(n.Value, "\n") {
+			// Multi-line: use Go raw string literal
+			return "`" + n.Value + "`"
+		}
 		return strconv.Quote(n.Value)
 	case *parser.BoolLit:
 		if n.Value {

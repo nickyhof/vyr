@@ -1,0 +1,42 @@
+// structs.vyr — Demonstrating structs, while loops, and type matching
+
+struct Point { x, y }
+struct Circle { center, radius }
+struct Rect { origin, width, height }
+
+fn area(shape) {
+  shape |> match {
+    Circle(c) => c.radius * c.radius * 3
+    Rect(r) => r.width * r.height
+    _ => 0
+  }
+}
+
+fn describe(shape) {
+  shape |> match {
+    Circle(c) => "Circle at (${c.center.x}, ${c.center.y}) r=${c.radius}"
+    Rect(r) => "Rect at (${r.origin.x}, ${r.origin.y}) ${r.width}x${r.height}"
+    _ => "Unknown shape"
+  }
+}
+
+fn main() {
+  // Create structs
+  let c = Circle(Point(0, 0), 5)
+  let r = Rect(Point(1, 2), 10, 4)
+
+  // Type matching
+  c |> describe |> print
+  r |> describe |> print
+  "Areas: circle=${area(c)}, rect=${area(r)}" |> print
+
+  // While loop with mutation
+  let shapes = [c, r, Circle(Point(3, 4), 2)]
+  let mut total = 0
+  let mut i = 0
+  while i < length(shapes) {
+    total = total + area(index(shapes, i))
+    i = i + 1
+  }
+  "Total area: ${total}" |> print
+}
