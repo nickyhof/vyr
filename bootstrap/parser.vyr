@@ -1,0 +1,804 @@
+// parser.vyr — Recursive-descent parser for Vyr, written in Vyr.
+// Converts a token array into an AST (tree of structs).
+//
+// Uses mutable pos variable + early return for clean error handling.
+// Each parse function returns a result hashmap: #{node: ..., error: ...}
+// On success: error is "" and node is the parsed AST node.
+// On failure: error is a string describing what went wrong.
+
+// ---- AST node types ----
+
+struct Program { decls }
+struct FnDecl { name, params, return_type, body }
+struct Param { name, type_name }
+struct LetStmt { name, value, mutable }
+struct IfExpr { condition, then_body, else_body }
+struct MatchExpr { subject, arms }
+struct MatchArm { pattern, body }
+struct BinaryExpr { op, left, right }
+struct CallExpr { fn_node, args }
+struct PipeExpr { left, right }
+struct ArrayLit { elements }
+struct HashLit { pairs }
+struct HashPair { key, value }
+struct DotExpr { object, field }
+struct FnLit { params, body }
+struct FanOutExpr { value, fns }
+struct IntLit { value }
+struct StringLit { value }
+struct BoolLit { value }
+struct Ident { name }
+struct ImportDecl { path }
+struct WhileExpr { condition, body }
+struct AssignStmt { name, value }
+struct StructDecl { name, fields }
+struct TypePattern { type_name, binding }
+struct ReturnStmt { value }
+struct InterpLit { parts }
+
+// ---- parser state (module-level mutable vars set by parse()) ----
+
+// We use a simple approach: the parser functions share mutable state.
+// Since Vyr doesn't have classes, we pass tokens as a parameter
+// and use module-level functions that take a state hashmap.
+
+fn make_ok(node) { #{node: node, error: ""} }
+fn make_err(msg) { #{node: 0, error: msg} }
+fn is_err(r) { get(r, "error") != "" }
+
+// ---- parser helpers ----
+
+fn p_current(tokens, pos) { index(tokens, pos) }
+fn p_check(tokens, pos, typ) { (p_current(tokens, pos)).type == typ }
+fn p_at_end(tokens, pos) { p_check(tokens, pos, "EOF") }
+
+fn p_peek_type(tokens, pos) {
+  if pos + 1 < length(tokens) {
+    return (index(tokens, pos + 1)).type
+  }
+  "EOF"
+}
+
+// ---- top-level parse ----
+
+fn parse(tokens) {
+  let mut pos = 0
+  let mut decls = []
+
+  while p_at_end(tokens, pos) == false {
+    let result = parse_decl(tokens, pos)
+    if is_err(result) {
+      return result
+    }
+    pos = get(result, "pos")
+    decls = push(decls, get(result, "node"))
+  }
+
+  make_ok(Program(decls))
+}
+
+// ---- declarations ----
+
+fn parse_decl(tokens, pos) {
+  let tok = p_current(tokens, pos)
+  if tok.type == "IMPORT" {
+    return parse_import(tokens, pos)
+  }
+  if tok.type == "FN" {
+    return parse_fn_decl(tokens, pos)
+  }
+  if tok.type == "STRUCT" {
+    return parse_struct_decl(tokens, pos)
+  }
+  make_err("expected declaration, got " + tok.type + "(" + tok.literal + ") at line " + to_string(tok.line))
+}
+
+fn parse_import(tokens, pos) {
+  // import "path"
+  let mut p = pos + 1 // skip 'import'
+  let tok = p_current(tokens, p)
+  if tok.type != "STRING" {
+    return make_err("expected string after 'import', got " + tok.type)
+  }
+  p = p + 1
+  #{node: ImportDecl(tok.literal), error: "", pos: p}
+}
+
+fn parse_fn_decl(tokens, pos) {
+  // fn name(params) { body }
+  let mut p = pos + 1 // skip 'fn'
+  let name_tok = p_current(tokens, p)
+  if name_tok.type != "IDENT" {
+    return make_err("expected function name, got " + name_tok.type)
+  }
+  let name = name_tok.literal
+  p = p + 1
+
+  // Parse parameter list
+  let params_result = parse_param_list(tokens, p)
+  if is_err(params_result) { return params_result }
+  p = get(params_result, "pos")
+  let params = get(params_result, "node")
+
+  // Optional return type
+  let mut return_type = ""
+  if p_check(tokens, p, "COLON") {
+    p = p + 1
+    let rt = p_current(tokens, p)
+    if rt.type != "IDENT" {
+      return make_err("expected return type after ':', got " + rt.type)
+    }
+    return_type = rt.literal
+    p = p + 1
+  }
+
+  // Parse body block
+  let body_result = parse_block(tokens, p)
+  if is_err(body_result) { return body_result }
+  p = get(body_result, "pos")
+  let body = get(body_result, "node")
+
+  #{node: FnDecl(name, params, return_type, body), error: "", pos: p}
+}
+
+fn parse_param_list(tokens, pos) {
+  // (name: type, name: type, ...)
+  if p_check(tokens, pos, "LPAREN") == false {
+    return make_err("expected '(' for parameter list")
+  }
+  let mut p = pos + 1
+  let mut params = []
+
+  while p_check(tokens, p, "RPAREN") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in parameter list")
+    }
+    let name_tok = p_current(tokens, p)
+    if name_tok.type != "IDENT" {
+      return make_err("expected parameter name, got " + name_tok.type)
+    }
+    p = p + 1
+
+    // Optional type annotation
+    let mut type_name = ""
+    if p_check(tokens, p, "COLON") {
+      p = p + 1
+      let tt = p_current(tokens, p)
+      if tt.type != "IDENT" {
+        return make_err("expected type after ':', got " + tt.type)
+      }
+      type_name = tt.literal
+      p = p + 1
+    }
+
+    params = push(params, Param(name_tok.literal, type_name))
+
+    if p_check(tokens, p, "COMMA") {
+      p = p + 1
+    }
+  }
+
+  p = p + 1 // skip ')'
+  #{node: params, error: "", pos: p}
+}
+
+fn parse_block(tokens, pos) {
+  // { stmt... }
+  if p_check(tokens, pos, "LBRACE") == false {
+    return make_err("expected '{', got " + (p_current(tokens, pos)).type)
+  }
+  let mut p = pos + 1
+  let mut stmts = []
+
+  while p_check(tokens, p, "RBRACE") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in block")
+    }
+    let result = parse_stmt(tokens, p)
+    if is_err(result) { return result }
+    p = get(result, "pos")
+    stmts = push(stmts, get(result, "node"))
+  }
+
+  p = p + 1 // skip '}'
+  #{node: stmts, error: "", pos: p}
+}
+
+// ---- statements ----
+
+fn parse_stmt(tokens, pos) {
+  let tok = p_current(tokens, pos)
+
+  if tok.type == "LET" {
+    return parse_let(tokens, pos)
+  }
+  if tok.type == "WHILE" {
+    return parse_while(tokens, pos)
+  }
+  if tok.type == "RETURN" {
+    return parse_return(tokens, pos)
+  }
+
+  // Check for assignment: ident = expr
+  if tok.type == "IDENT" {
+    if p_peek_type(tokens, pos) == "EQUAL" {
+      let name = tok.literal
+      let mut p = pos + 2 // skip ident and =
+      let val_result = parse_expr(tokens, p)
+      if is_err(val_result) { return val_result }
+      p = get(val_result, "pos")
+      return #{node: AssignStmt(name, get(val_result, "node")), error: "", pos: p}
+    }
+  }
+
+  // Expression statement
+  parse_expr(tokens, pos)
+}
+
+fn parse_let(tokens, pos) {
+  // let [mut] name = value
+  let mut p = pos + 1 // skip 'let'
+  let mut mutable = false
+
+  if p_check(tokens, p, "MUT") {
+    mutable = true
+    p = p + 1
+  }
+
+  let name_tok = p_current(tokens, p)
+  if name_tok.type != "IDENT" {
+    return make_err("expected variable name after 'let', got " + name_tok.type)
+  }
+  p = p + 1
+
+  if p_check(tokens, p, "EQUAL") == false {
+    return make_err("expected '=' after variable name")
+  }
+  p = p + 1
+
+  let val_result = parse_expr(tokens, p)
+  if is_err(val_result) { return val_result }
+  p = get(val_result, "pos")
+
+  #{node: LetStmt(name_tok.literal, get(val_result, "node"), mutable), error: "", pos: p}
+}
+
+fn parse_while(tokens, pos) {
+  // while condition { body }
+  let mut p = pos + 1 // skip 'while'
+  let cond_result = parse_expr(tokens, p)
+  if is_err(cond_result) { return cond_result }
+  p = get(cond_result, "pos")
+
+  let body_result = parse_block(tokens, p)
+  if is_err(body_result) { return body_result }
+  p = get(body_result, "pos")
+
+  #{node: WhileExpr(get(cond_result, "node"), get(body_result, "node")), error: "", pos: p}
+}
+
+fn parse_return(tokens, pos) {
+  // return [expr]
+  let mut p = pos + 1 // skip 'return'
+  if p_check(tokens, p, "RBRACE") {
+    return #{node: ReturnStmt(0), error: "", pos: p}
+  }
+  if p_at_end(tokens, p) {
+    return #{node: ReturnStmt(0), error: "", pos: p}
+  }
+  let val_result = parse_expr(tokens, p)
+  if is_err(val_result) { return val_result }
+  p = get(val_result, "pos")
+  #{node: ReturnStmt(get(val_result, "node")), error: "", pos: p}
+}
+
+// ---- expressions (precedence climbing) ----
+// pipe |> → comparison ==,!=,<,>,<=,>= → add/sub +,- → mul/div *,/ → postfix → primary
+
+fn parse_expr(tokens, pos) {
+  parse_pipe(tokens, pos)
+}
+
+fn parse_pipe(tokens, pos) {
+  let left_result = parse_comparison(tokens, pos)
+  if is_err(left_result) { return left_result }
+  let mut p = get(left_result, "pos")
+  let mut left = get(left_result, "node")
+
+  while p_check(tokens, p, "PIPE") {
+    p = p + 1 // skip |>
+
+    // Fan-out: value |> [fn1, fn2]
+    if p_check(tokens, p, "LBRACKET") {
+      p = p + 1
+      let mut fns = []
+      while p_check(tokens, p, "RBRACKET") == false {
+        let fn_result = parse_expr(tokens, p)
+        if is_err(fn_result) { return fn_result }
+        p = get(fn_result, "pos")
+        fns = push(fns, get(fn_result, "node"))
+        if p_check(tokens, p, "COMMA") {
+          p = p + 1
+        }
+      }
+      p = p + 1 // skip ]
+      left = FanOutExpr(left, fns)
+    } else {
+      // Check for: value |> match { ... }
+      if p_check(tokens, p, "MATCH") {
+        p = p + 1 // skip 'match'
+        let match_result = parse_match_body(tokens, p, left)
+        if is_err(match_result) { return match_result }
+        p = get(match_result, "pos")
+        left = get(match_result, "node")
+      } else {
+        // Normal pipe: desugar value |> fn  →  fn(value)
+        //              and    value |> fn(a) → fn(value, a)
+        let right_result = parse_comparison(tokens, p)
+        if is_err(right_result) { return right_result }
+        p = get(right_result, "pos")
+        let right = get(right_result, "node")
+
+        // Desugar: if right is a call, inject left as first arg
+        if type_of(right) == "map" {
+          if has_key(right, "__type") {
+            if get(right, "__type") == "CallExpr" {
+              let existing_args = right.args
+              let new_args = concat([left], existing_args)
+              left = CallExpr(right.fn_node, new_args)
+            } else {
+              // It's some other node — wrap as call
+              left = CallExpr(right, [left])
+            }
+          } else {
+            left = CallExpr(right, [left])
+          }
+        } else {
+          left = CallExpr(right, [left])
+        }
+      }
+    }
+  }
+
+  #{node: left, error: "", pos: p}
+}
+
+fn is_comparison_type(typ) {
+  if typ == "EQ" { return true }
+  if typ == "NEQ" { return true }
+  if typ == "LT" { return true }
+  if typ == "GT" { return true }
+  if typ == "LTE" { return true }
+  if typ == "GTE" { return true }
+  false
+}
+
+fn parse_comparison(tokens, pos) {
+  let left_result = parse_add_sub(tokens, pos)
+  if is_err(left_result) { return left_result }
+  let mut p = get(left_result, "pos")
+  let mut left = get(left_result, "node")
+
+  while is_comparison_type((p_current(tokens, p)).type) {
+    let op = (p_current(tokens, p)).literal
+    p = p + 1
+    let right_result = parse_add_sub(tokens, p)
+    if is_err(right_result) { return right_result }
+    p = get(right_result, "pos")
+    left = BinaryExpr(op, left, get(right_result, "node"))
+  }
+
+  #{node: left, error: "", pos: p}
+}
+
+fn is_add_sub(typ) {
+  if typ == "PLUS" { return true }
+  if typ == "MINUS" { return true }
+  false
+}
+
+fn parse_add_sub(tokens, pos) {
+  let left_result = parse_mul_div(tokens, pos)
+  if is_err(left_result) { return left_result }
+  let mut p = get(left_result, "pos")
+  let mut left = get(left_result, "node")
+
+  while is_add_sub((p_current(tokens, p)).type) {
+    let op = (p_current(tokens, p)).literal
+    p = p + 1
+    let right_result = parse_mul_div(tokens, p)
+    if is_err(right_result) { return right_result }
+    p = get(right_result, "pos")
+    left = BinaryExpr(op, left, get(right_result, "node"))
+  }
+
+  #{node: left, error: "", pos: p}
+}
+
+fn is_mul_div(typ) {
+  if typ == "STAR" { return true }
+  if typ == "SLASH" { return true }
+  false
+}
+
+fn parse_mul_div(tokens, pos) {
+  let left_result = parse_postfix(tokens, pos)
+  if is_err(left_result) { return left_result }
+  let mut p = get(left_result, "pos")
+  let mut left = get(left_result, "node")
+
+  while is_mul_div((p_current(tokens, p)).type) {
+    let op = (p_current(tokens, p)).literal
+    p = p + 1
+    let right_result = parse_postfix(tokens, p)
+    if is_err(right_result) { return right_result }
+    p = get(right_result, "pos")
+    left = BinaryExpr(op, left, get(right_result, "node"))
+  }
+
+  #{node: left, error: "", pos: p}
+}
+
+fn parse_postfix(tokens, pos) {
+  let left_result = parse_primary(tokens, pos)
+  if is_err(left_result) { return left_result }
+  let mut p = get(left_result, "pos")
+  let mut left = get(left_result, "node")
+
+  let mut cont = true
+  while cont {
+    if p_check(tokens, p, "LPAREN") {
+      // Function call
+      let call_result = parse_call_args(tokens, p, left)
+      if is_err(call_result) { return call_result }
+      p = get(call_result, "pos")
+      left = get(call_result, "node")
+    } else {
+      if p_check(tokens, p, "DOT") {
+        // Dot access
+        p = p + 1
+        let field_tok = p_current(tokens, p)
+        if field_tok.type != "IDENT" {
+          return make_err("expected field name after '.', got " + field_tok.type)
+        }
+        p = p + 1
+        left = DotExpr(left, field_tok.literal)
+      } else {
+        cont = false
+      }
+    }
+  }
+
+  #{node: left, error: "", pos: p}
+}
+
+fn parse_call_args(tokens, pos, fn_node) {
+  // ( arg1, arg2, ... )
+  let mut p = pos + 1 // skip (
+  let mut args = []
+
+  while p_check(tokens, p, "RPAREN") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in call arguments")
+    }
+    let arg_result = parse_expr(tokens, p)
+    if is_err(arg_result) { return arg_result }
+    p = get(arg_result, "pos")
+    args = push(args, get(arg_result, "node"))
+    if p_check(tokens, p, "COMMA") {
+      p = p + 1
+    }
+  }
+
+  p = p + 1 // skip )
+  #{node: CallExpr(fn_node, args), error: "", pos: p}
+}
+
+// ---- primary expressions ----
+
+fn parse_primary(tokens, pos) {
+  let tok = p_current(tokens, pos)
+
+  // Integer literal
+  if tok.type == "INT" {
+    return #{node: IntLit(to_int(tok.literal)), error: "", pos: pos + 1}
+  }
+
+  // String literal (possibly start of interpolation)
+  if tok.type == "STRING" {
+    // Check if next token is INTERP_START → interpolated string
+    if p_peek_type(tokens, pos) == "INTERP_START" {
+      return parse_interp_lit(tokens, pos)
+    }
+    return #{node: StringLit(tok.literal), error: "", pos: pos + 1}
+  }
+
+  // Boolean literals
+  if tok.type == "TRUE" {
+    return #{node: BoolLit(true), error: "", pos: pos + 1}
+  }
+  if tok.type == "FALSE" {
+    return #{node: BoolLit(false), error: "", pos: pos + 1}
+  }
+
+  // Identifier
+  if tok.type == "IDENT" {
+    return #{node: Ident(tok.literal), error: "", pos: pos + 1}
+  }
+
+  // Function literal: fn(params) { body }
+  if tok.type == "FN" {
+    return parse_fn_lit(tokens, pos)
+  }
+
+  // Array literal: [elem, ...]
+  if tok.type == "LBRACKET" {
+    return parse_array_lit(tokens, pos)
+  }
+
+  // Hash literal: #{key: val, ...}
+  if tok.type == "HASH_LBRACE" {
+    return parse_hash_lit(tokens, pos)
+  }
+
+  // If expression
+  if tok.type == "IF" {
+    return parse_if_expr(tokens, pos)
+  }
+
+  // Match expression (standalone, not piped)
+  if tok.type == "MATCH" {
+    return make_err("match must be used with pipe: expr |> match { ... }")
+  }
+
+  // Parenthesized expression
+  if tok.type == "LPAREN" {
+    let mut p = pos + 1
+    let inner_result = parse_expr(tokens, p)
+    if is_err(inner_result) { return inner_result }
+    p = get(inner_result, "pos")
+    if p_check(tokens, p, "RPAREN") == false {
+      return make_err("expected ')' after expression")
+    }
+    return #{node: get(inner_result, "node"), error: "", pos: p + 1}
+  }
+
+  make_err("unexpected token: " + tok.type + "(" + tok.literal + ") at line " + to_string(tok.line))
+}
+
+fn parse_fn_lit(tokens, pos) {
+  // fn(params) { body }
+  let mut p = pos + 1 // skip 'fn'
+  let params_result = parse_param_list(tokens, p)
+  if is_err(params_result) { return params_result }
+  p = get(params_result, "pos")
+
+  let body_result = parse_block(tokens, p)
+  if is_err(body_result) { return body_result }
+  p = get(body_result, "pos")
+
+  #{node: FnLit(get(params_result, "node"), get(body_result, "node")), error: "", pos: p}
+}
+
+fn parse_array_lit(tokens, pos) {
+  // [elem, ...]
+  let mut p = pos + 1 // skip [
+  let mut elems = []
+
+  while p_check(tokens, p, "RBRACKET") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in array literal")
+    }
+    let elem_result = parse_expr(tokens, p)
+    if is_err(elem_result) { return elem_result }
+    p = get(elem_result, "pos")
+    elems = push(elems, get(elem_result, "node"))
+    if p_check(tokens, p, "COMMA") {
+      p = p + 1
+    }
+  }
+
+  p = p + 1 // skip ]
+  #{node: ArrayLit(elems), error: "", pos: p}
+}
+
+fn parse_hash_lit(tokens, pos) {
+  // #{key: val, ...}
+  let mut p = pos + 1 // skip #{
+  let mut pairs = []
+
+  while p_check(tokens, p, "RBRACE") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in hash literal")
+    }
+    let key_tok = p_current(tokens, p)
+    if key_tok.type != "IDENT" {
+      return make_err("expected key name in hash, got " + key_tok.type)
+    }
+    p = p + 1
+    if p_check(tokens, p, "COLON") == false {
+      return make_err("expected ':' after hash key")
+    }
+    p = p + 1
+    let val_result = parse_expr(tokens, p)
+    if is_err(val_result) { return val_result }
+    p = get(val_result, "pos")
+    pairs = push(pairs, HashPair(key_tok.literal, get(val_result, "node")))
+    if p_check(tokens, p, "COMMA") {
+      p = p + 1
+    }
+  }
+
+  p = p + 1 // skip }
+  #{node: HashLit(pairs), error: "", pos: p}
+}
+
+fn parse_if_expr(tokens, pos) {
+  // if condition { then } [else { else }]
+  let mut p = pos + 1 // skip 'if'
+  let cond_result = parse_expr(tokens, p)
+  if is_err(cond_result) { return cond_result }
+  p = get(cond_result, "pos")
+
+  let then_result = parse_block(tokens, p)
+  if is_err(then_result) { return then_result }
+  p = get(then_result, "pos")
+
+  let mut else_body = []
+  if p_check(tokens, p, "ELSE") {
+    p = p + 1
+    // else if → parse as nested if in else block
+    if p_check(tokens, p, "IF") {
+      let elif_result = parse_if_expr(tokens, p)
+      if is_err(elif_result) { return elif_result }
+      p = get(elif_result, "pos")
+      else_body = [get(elif_result, "node")]
+    } else {
+      let else_result = parse_block(tokens, p)
+      if is_err(else_result) { return else_result }
+      p = get(else_result, "pos")
+      else_body = get(else_result, "node")
+    }
+  }
+
+  #{node: IfExpr(get(cond_result, "node"), get(then_result, "node"), else_body), error: "", pos: p}
+}
+
+fn parse_match_body(tokens, pos, subject) {
+  // { pattern => body  pattern => body ... }
+  if p_check(tokens, pos, "LBRACE") == false {
+    return make_err("expected '{' after 'match'")
+  }
+  let mut p = pos + 1
+  let mut arms = []
+
+  while p_check(tokens, p, "RBRACE") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in match expression")
+    }
+
+    // Parse pattern
+    let pattern_result = parse_match_pattern(tokens, p)
+    if is_err(pattern_result) { return pattern_result }
+    p = get(pattern_result, "pos")
+
+    // Expect =>
+    if p_check(tokens, p, "ARROW") == false {
+      return make_err("expected '=>' in match arm, got " + (p_current(tokens, p)).type)
+    }
+    p = p + 1
+
+    // Parse body expression
+    let body_result = parse_expr(tokens, p)
+    if is_err(body_result) { return body_result }
+    p = get(body_result, "pos")
+
+    arms = push(arms, MatchArm(get(pattern_result, "node"), get(body_result, "node")))
+  }
+
+  p = p + 1 // skip }
+  #{node: MatchExpr(subject, arms), error: "", pos: p}
+}
+
+fn parse_match_pattern(tokens, pos) {
+  let tok = p_current(tokens, pos)
+
+  // Type pattern: TypeName(binding)
+  if tok.type == "IDENT" {
+    if p_peek_type(tokens, pos) == "LPAREN" {
+      let type_name = tok.literal
+      let mut p = pos + 2 // skip name and (
+      let bind_tok = p_current(tokens, p)
+      if bind_tok.type != "IDENT" {
+        return make_err("expected binding name in type pattern, got " + bind_tok.type)
+      }
+      p = p + 1
+      if p_check(tokens, p, "RPAREN") == false {
+        return make_err("expected ')' after type pattern binding")
+      }
+      p = p + 1
+      return #{node: TypePattern(type_name, bind_tok.literal), error: "", pos: p}
+    }
+  }
+
+  // Regular pattern (literal or wildcard)
+  parse_primary(tokens, pos)
+}
+
+fn parse_interp_lit(tokens, pos) {
+  // STRING INTERP_START expr INTERP_END [STRING [INTERP_START expr INTERP_END]...]
+  let mut p = pos
+  let mut parts = []
+
+  // First text fragment
+  let first_tok = p_current(tokens, p)
+  parts = push(parts, StringLit(first_tok.literal))
+  p = p + 1
+
+  let mut cont = true
+  while cont {
+    if p_check(tokens, p, "INTERP_START") {
+      p = p + 1 // skip ${
+      let expr_result = parse_expr(tokens, p)
+      if is_err(expr_result) { return expr_result }
+      p = get(expr_result, "pos")
+      parts = push(parts, get(expr_result, "node"))
+
+      if p_check(tokens, p, "INTERP_END") == false {
+        return make_err("expected '}' to close interpolation")
+      }
+      p = p + 1
+
+      // Next text fragment
+      if p_check(tokens, p, "STRING") {
+        parts = push(parts, StringLit((p_current(tokens, p)).literal))
+        p = p + 1
+      }
+    } else {
+      cont = false
+    }
+  }
+
+  #{node: InterpLit(parts), error: "", pos: p}
+}
+
+fn parse_struct_decl(tokens, pos) {
+  // struct Name { field1, field2, ... }
+  let mut p = pos + 1 // skip 'struct'
+  let name_tok = p_current(tokens, p)
+  if name_tok.type != "IDENT" {
+    return make_err("expected struct name, got " + name_tok.type)
+  }
+  p = p + 1
+
+  if p_check(tokens, p, "LBRACE") == false {
+    return make_err("expected '{' after struct name")
+  }
+  p = p + 1
+
+  let mut fields = []
+  while p_check(tokens, p, "RBRACE") == false {
+    if p_at_end(tokens, p) {
+      return make_err("unexpected EOF in struct declaration")
+    }
+    let field_tok = p_current(tokens, p)
+    if field_tok.type != "IDENT" {
+      return make_err("expected field name, got " + field_tok.type)
+    }
+    fields = push(fields, field_tok.literal)
+    p = p + 1
+
+    // Optional type annotation (skip)
+    if p_check(tokens, p, "COLON") {
+      p = p + 1
+      if p_check(tokens, p, "IDENT") { p = p + 1 }
+    }
+
+    if p_check(tokens, p, "COMMA") {
+      p = p + 1
+    }
+  }
+
+  p = p + 1 // skip }
+  #{node: StructDecl(name_tok.literal, fields), error: "", pos: p}
+}

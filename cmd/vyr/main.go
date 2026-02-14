@@ -27,9 +27,9 @@ func run() error {
 	switch os.Args[1] {
 	case "run":
 		if len(os.Args) < 3 {
-			return fmt.Errorf("usage: vyr run <file.vyr>")
+			return fmt.Errorf("usage: vyr run <file.vyr> [args...]")
 		}
-		return runFile(os.Args[2])
+		return runFile(os.Args[2], os.Args[3:])
 	case "build":
 		if len(os.Args) < 3 {
 			return fmt.Errorf("usage: vyr build <file.vyr> [-o output]")
@@ -61,7 +61,7 @@ func compile(filename string) (string, error) {
 	return codegen.Generate(prog), nil
 }
 
-func runFile(filename string) error {
+func runFile(filename string, extraArgs []string) error {
 	goCode, err := compile(filename)
 	if err != nil {
 		return err
@@ -78,7 +78,8 @@ func runFile(filename string) error {
 		return fmt.Errorf("write generated code: %w", err)
 	}
 
-	cmd := exec.Command("go", "run", mainFile)
+	runArgs := append([]string{"run", mainFile}, extraArgs...)
+	cmd := exec.Command("go", runArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	cmd.Stdin = os.Stdin

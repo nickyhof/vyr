@@ -1,12 +1,4 @@
-package codegen
-
-// emitPreamble writes the Go runtime (imports, helpers, builtins) that every
-// generated program needs. It is written once at the top of the output.
-func (g *Generator) emitPreamble() {
-	g.buf.WriteString(preamble)
-}
-
-const preamble = `package main
+package main
 
 import (
 	"fmt"
@@ -703,4 +695,3 @@ var _ = sort.Strings
 var _ = strconv.Itoa
 var _ = strings.Join
 
-`

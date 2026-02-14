@@ -20,7 +20,7 @@ var builtinSet = map[string]bool{
 	"read_file": true, "write_file": true, "file_exists": true, "append_file": true,
 	"format": true, "ok": true, "err": true, "is_ok": true, "is_err": true,
 	"unwrap": true, "unwrap_or": true, "try_read_file": true, "try_to_int": true,
-	"map": true, "filter": true, "reduce": true, "push": true,
+	"map": true, "filter": true, "reduce": true, "push": true, "args": true,
 }
 
 // Generator walks a Vyr AST and emits Go source code.

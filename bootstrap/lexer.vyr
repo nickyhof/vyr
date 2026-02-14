@@ -1,0 +1,390 @@
+// lexer.vyr — Vyr tokenizer written in Vyr
+// Produces a flat array of Token structs from source text.
+//
+// Design: A mutable state hashmap is threaded through helper functions.
+// Each helper reads/modifies the state and returns it. The state contains:
+//   pos, line, col, interp_depth, tokens, input, len
+
+struct Token { type, literal, line, col }
+
+// ---- character helpers ----
+
+fn is_alpha(ch) {
+  if ch >= "a" {
+    if ch <= "z" { return true }
+  }
+  if ch >= "A" {
+    if ch <= "Z" { return true }
+  }
+  if ch == "_" { return true }
+  false
+}
+
+fn is_digit(ch) {
+  if ch >= "0" {
+    if ch <= "9" { return true }
+  }
+  false
+}
+
+fn is_ident_char(ch) {
+  if is_alpha(ch) { return true }
+  is_digit(ch)
+}
+
+fn is_whitespace(ch) {
+  if ch == " " { return true }
+  if ch == "\n" { return true }
+  if ch == "\t" { return true }
+  if ch == "\r" { return true }
+  false
+}
+
+fn keyword_type(word) {
+  word |> match {
+    "fn" => "FN"
+    "let" => "LET"
+    "match" => "MATCH"
+    "true" => "TRUE"
+    "false" => "FALSE"
+    "if" => "IF"
+    "else" => "ELSE"
+    "import" => "IMPORT"
+    "while" => "WHILE"
+    "mut" => "MUT"
+    "struct" => "STRUCT"
+    "return" => "RETURN"
+    _ => "IDENT"
+  }
+}
+
+// ---- state helpers ----
+
+fn s_ch(s) { char_at(get(s, "input"), get(s, "pos")) }
+fn s_at(s, n) { char_at(get(s, "input"), n) }
+fn s_pos(s) { get(s, "pos") }
+fn s_len(s) { get(s, "len") }
+fn s_line(s) { get(s, "line") }
+fn s_col(s) { get(s, "col") }
+fn s_eof(s) { s_pos(s) >= s_len(s) }
+
+fn s_advance(s) {
+  let p = s_pos(s)
+  if p >= s_len(s) { return s }
+  let ch = s_at(s, p)
+  if ch == "\n" {
+    s |> set("pos", p + 1) |> set("line", s_line(s) + 1) |> set("col", 1)
+  } else {
+    s |> set("pos", p + 1) |> set("col", s_col(s) + 1)
+  }
+}
+
+fn s_peek(s) {
+  let p = s_pos(s) + 1
+  if p < s_len(s) { return s_at(s, p) }
+  ""
+}
+
+fn s_emit(s, tok) {
+  set(s, "tokens", push(get(s, "tokens"), tok))
+}
+
+// ---- scanning functions ----
+
+fn skip_whitespace(s) {
+  if s_eof(s) { return s }
+  if is_whitespace(s_ch(s)) == false { return s }
+  skip_whitespace(s_advance(s))
+}
+
+fn skip_line_comment(s) {
+  // Already past the //
+  if s_eof(s) { return s }
+  if s_ch(s) == "\n" { return s }
+  skip_line_comment(s_advance(s))
+}
+
+fn read_int(s, sl, sc, buf) {
+  if s_eof(s) {
+    return s_emit(s, Token("INT", buf, sl, sc))
+  }
+  if is_digit(s_ch(s)) {
+    return read_int(s_advance(s), sl, sc, buf + s_ch(s))
+  }
+  s_emit(s, Token("INT", buf, sl, sc))
+}
+
+fn read_ident(s, sl, sc, buf) {
+  if s_eof(s) {
+    return s_emit(s, Token(keyword_type(buf), buf, sl, sc))
+  }
+  if is_ident_char(s_ch(s)) {
+    return read_ident(s_advance(s), sl, sc, buf + s_ch(s))
+  }
+  s_emit(s, Token(keyword_type(buf), buf, sl, sc))
+}
+
+fn read_triple_string(s, sl, sc, buf) {
+  if s_eof(s) {
+    return s_emit(s, Token("STRING", buf, sl, sc))
+  }
+  let p = s_pos(s)
+  let ln = s_len(s)
+  if p + 2 < ln {
+    if s_ch(s) == "\"" {
+      if s_at(s, p + 1) == "\"" {
+        if s_at(s, p + 2) == "\"" {
+          // Found closing """
+          let s2 = s_advance(s_advance(s_advance(s)))
+          return s_emit(s2, Token("STRING", buf, sl, sc))
+        }
+      }
+    }
+  }
+  read_triple_string(s_advance(s), sl, sc, buf + s_ch(s))
+}
+
+// read_string_body reads until closing " or ${ interpolation.
+// Returns a hashmap: { text, is_interp, state }
+fn read_string_body(s, buf) {
+  if s_eof(s) {
+    return #{text: buf, is_interp: false, state: s}
+  }
+  let ch = s_ch(s)
+
+  // Closing quote
+  if ch == "\"" {
+    return #{text: buf, is_interp: false, state: s}
+  }
+
+  // Escape sequences
+  if ch == "\\" {
+    let p = s_pos(s) + 1
+    if p < s_len(s) {
+      let next = s_at(s, p)
+      // \${ → literal ${
+      if next == "$" {
+        return read_string_body(s_advance(s_advance(s)), buf + "$")
+      }
+      if next == "n" {
+        return read_string_body(s_advance(s_advance(s)), buf + "\n")
+      }
+      if next == "t" {
+        return read_string_body(s_advance(s_advance(s)), buf + "\t")
+      }
+      if next == "\\" {
+        return read_string_body(s_advance(s_advance(s)), buf + "\\")
+      }
+      if next == "\"" {
+        return read_string_body(s_advance(s_advance(s)), buf + "\"")
+      }
+      // Unknown escape: keep both chars
+      return read_string_body(s_advance(s_advance(s)), buf + "\\" + next)
+    }
+  }
+
+  // Interpolation start: ${
+  if ch == "$" {
+    let p = s_pos(s) + 1
+    if p < s_len(s) {
+      if s_at(s, p) == "{" {
+        return #{text: buf, is_interp: true, state: s}
+      }
+    }
+  }
+
+  read_string_body(s_advance(s), buf + ch)
+}
+
+fn read_string(s, sl, sc) {
+  let s2 = s_advance(s) // skip opening "
+  let result = read_string_body(s2, "")
+  let text = get(result, "text")
+  let is_interp = get(result, "is_interp")
+  let s3 = get(result, "state")
+
+  if is_interp == false {
+    // Simple string — skip closing "
+    let s4 = s_advance(s3)
+    return s_emit(s4, Token("STRING", text, sl, sc))
+  }
+
+  // Interpolation: emit STRING, then INTERP_START
+  let s4 = s_emit(s3, Token("STRING", text, sl, sc))
+  // Skip past ${
+  let s5 = s_advance(s_advance(s4))
+  let new_depth = get(s5, "interp_depth") + 1
+  let s6 = set(s5, "interp_depth", new_depth)
+  s_emit(s6, Token("INTERP_START", "\${", s_line(s6), s_col(s6)))
+}
+
+fn read_string_continuation(s, sl, sc) {
+  // Emit INTERP_END first
+  let s2 = s_emit(s, Token("INTERP_END", "}", sl, sc))
+  let result = read_string_body(s2, "")
+  let text = get(result, "text")
+  let is_interp = get(result, "is_interp")
+  let s3 = get(result, "state")
+
+  if is_interp == false {
+    // End of string — skip closing "
+    let s4 = s_advance(s3)
+    return s_emit(s4, Token("STRING", text, s_line(s4), s_col(s4)))
+  }
+
+  // Another interpolation
+  let s4 = s_emit(s3, Token("STRING", text, s_line(s3), s_col(s3)))
+  let s5 = s_advance(s_advance(s4))
+  let new_depth = get(s5, "interp_depth") + 1
+  let s6 = set(s5, "interp_depth", new_depth)
+  s_emit(s6, Token("INTERP_START", "\${", s_line(s6), s_col(s6)))
+}
+
+// ---- main scan loop ----
+
+fn scan_token(s) {
+  let s2 = skip_whitespace(s)
+  if s_eof(s2) {
+    return s_emit(s2, Token("EOF", "", s_line(s2), s_col(s2)))
+  }
+
+  let ch = s_ch(s2)
+  let sl = s_line(s2)
+  let sc = s_col(s2)
+
+  // Comments
+  if ch == "/" {
+    if s_peek(s2) == "/" {
+      return scan_token(skip_line_comment(s_advance(s_advance(s2))))
+    }
+    // Slash operator
+    return s_emit(s_advance(s2), Token("SLASH", "/", sl, sc))
+  }
+
+  // Triple-quote strings
+  if ch == "\"" {
+    let p = s_pos(s2)
+    if p + 2 < s_len(s2) {
+      if s_at(s2, p + 1) == "\"" {
+        if s_at(s2, p + 2) == "\"" {
+          let s3 = s_advance(s_advance(s_advance(s2)))
+          // Skip optional leading newline
+          if s_eof(s3) == false {
+            if s_ch(s3) == "\n" {
+              return read_triple_string(s_advance(s3), sl, sc, "")
+            }
+          }
+          return read_triple_string(s3, sl, sc, "")
+        }
+      }
+    }
+    // Regular string
+    return read_string(s2, sl, sc)
+  }
+
+  // Two-char operators
+  if ch == "|" {
+    if s_peek(s2) == ">" {
+      return s_emit(s_advance(s_advance(s2)), Token("PIPE", "|>", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("ILLEGAL", "|", sl, sc))
+  }
+
+  if ch == "=" {
+    let next = s_peek(s2)
+    if next == ">" {
+      return s_emit(s_advance(s_advance(s2)), Token("ARROW", "=>", sl, sc))
+    }
+    if next == "=" {
+      return s_emit(s_advance(s_advance(s2)), Token("EQ", "==", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("EQUAL", "=", sl, sc))
+  }
+
+  if ch == "!" {
+    if s_peek(s2) == "=" {
+      return s_emit(s_advance(s_advance(s2)), Token("NEQ", "!=", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("ILLEGAL", "!", sl, sc))
+  }
+
+  if ch == "<" {
+    if s_peek(s2) == "=" {
+      return s_emit(s_advance(s_advance(s2)), Token("LTE", "<=", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("LT", "<", sl, sc))
+  }
+
+  if ch == ">" {
+    if s_peek(s2) == "=" {
+      return s_emit(s_advance(s_advance(s2)), Token("GTE", ">=", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("GT", ">", sl, sc))
+  }
+
+  // Single-char tokens
+  if ch == "(" { return s_emit(s_advance(s2), Token("LPAREN", "(", sl, sc)) }
+  if ch == ")" { return s_emit(s_advance(s2), Token("RPAREN", ")", sl, sc)) }
+  if ch == "{" { return s_emit(s_advance(s2), Token("LBRACE", "{", sl, sc)) }
+
+  if ch == "}" {
+    if get(s2, "interp_depth") > 0 {
+      let s3 = set(s2, "interp_depth", get(s2, "interp_depth") - 1)
+      return read_string_continuation(s_advance(s3), sl, sc)
+    }
+    return s_emit(s_advance(s2), Token("RBRACE", "}", sl, sc))
+  }
+
+  if ch == "[" { return s_emit(s_advance(s2), Token("LBRACKET", "[", sl, sc)) }
+  if ch == "]" { return s_emit(s_advance(s2), Token("RBRACKET", "]", sl, sc)) }
+  if ch == "," { return s_emit(s_advance(s2), Token("COMMA", ",", sl, sc)) }
+  if ch == ":" { return s_emit(s_advance(s2), Token("COLON", ":", sl, sc)) }
+  if ch == "." { return s_emit(s_advance(s2), Token("DOT", ".", sl, sc)) }
+  if ch == "+" { return s_emit(s_advance(s2), Token("PLUS", "+", sl, sc)) }
+  if ch == "-" { return s_emit(s_advance(s2), Token("MINUS", "-", sl, sc)) }
+  if ch == "*" { return s_emit(s_advance(s2), Token("STAR", "*", sl, sc)) }
+
+  if ch == "#" {
+    if s_peek(s2) == "{" {
+      return s_emit(s_advance(s_advance(s2)), Token("HASH_LBRACE", "#{", sl, sc))
+    }
+    return s_emit(s_advance(s2), Token("ILLEGAL", "#", sl, sc))
+  }
+
+  // Numbers
+  if is_digit(ch) {
+    return read_int(s_advance(s2), sl, sc, ch)
+  }
+
+  // Identifiers and keywords
+  if is_alpha(ch) {
+    return read_ident(s_advance(s2), sl, sc, ch)
+  }
+
+  // Unknown character
+  s_emit(s_advance(s2), Token("ILLEGAL", ch, sl, sc))
+}
+
+fn tokenize(input) {
+  let mut s = #{
+    input: input,
+    len: length(input),
+    pos: 0,
+    line: 1,
+    col: 1,
+    interp_depth: 0,
+    tokens: []
+  }
+
+  let mut done = false
+  while done == false {
+    s = scan_token(s)
+    let toks = get(s, "tokens")
+    let last = index(toks, length(toks) - 1)
+    if last.type == "EOF" {
+      done = true
+    }
+  }
+
+  get(s, "tokens")
+}

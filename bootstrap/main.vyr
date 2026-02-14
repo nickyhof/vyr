@@ -1,0 +1,51 @@
+// main.vyr — Bootstrap Vyr compiler entry point
+// Usage: vyrc <input.vyr> [output.go]
+//
+// Reads a Vyr source file, lexes → parses → generates Go code,
+// then writes the output .go file.
+
+import "bootstrap/lexer"
+import "bootstrap/parser"
+import "bootstrap/codegen"
+
+fn main() {
+  let argv = args()
+  if length(argv) < 1 {
+    print("Usage: vyrc <input.vyr> [output.go]")
+    return
+  }
+
+  let input_file = index(argv, 0)
+
+  // Determine output file: either explicit or replace .vyr with .go
+  let output_file = if length(argv) > 1 {
+    index(argv, 1)
+  } else {
+    if ends_with(input_file, ".vyr") {
+      replace(input_file, ".vyr", ".go")
+    } else {
+      input_file + ".go"
+    }
+  }
+
+  // Read source
+  let source = read_file(input_file)
+
+  // Lex
+  let tokens = tokenize(source)
+
+  // Parse
+  let result = parse(tokens)
+  if get(result, "error") != "" {
+    print("Parse error: " + get(result, "error"))
+    return
+  }
+  let prog = get(result, "node")
+
+  // Generate Go code
+  let go_code = generate(prog)
+
+  // Write output
+  write_file(output_file, go_code)
+  print("Compiled " + input_file + " -> " + output_file)
+}

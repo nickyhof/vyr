@@ -1,0 +1,593 @@
+// codegen.vyr — Vyr code generator, written in Vyr.
+// Walks the AST and emits a self-contained Go source file.
+
+import "bootstrap/lexer"
+import "bootstrap/parser"
+
+// ---- builtin set ----
+
+fn is_builtin(name) {
+  name |> match {
+    "print" => true
+    "uppercase" => true
+    "length" => true
+    "head" => true
+    "tail" => true
+    "range" => true
+    "concat" => true
+    "lowercase" => true
+    "split" => true
+    "join" => true
+    "trim" => true
+    "contains" => true
+    "replace" => true
+    "starts_with" => true
+    "ends_with" => true
+    "substring" => true
+    "char_at" => true
+    "index" => true
+    "mod" => true
+    "to_string" => true
+    "to_int" => true
+    "sort" => true
+    "slice" => true
+    "reverse" => true
+    "type_of" => true
+    "get" => true
+    "set" => true
+    "keys" => true
+    "values" => true
+    "has_key" => true
+    "merge" => true
+    "remove" => true
+    "read_file" => true
+    "write_file" => true
+    "file_exists" => true
+    "append_file" => true
+    "format" => true
+    "ok" => true
+    "err" => true
+    "is_ok" => true
+    "is_err" => true
+    "unwrap" => true
+    "unwrap_or" => true
+    "try_read_file" => true
+    "try_to_int" => true
+    "map" => true
+    "filter" => true
+    "reduce" => true
+    "push" => true
+    "args" => true
+    _ => false
+  }
+}
+
+// ---- scope tracking ----
+// Scope is a list of hashmaps. Each hashmap maps variable names to true.
+
+fn push_scope(scopes) { push(scopes, #{}) }
+fn pop_scope(scopes) { slice(scopes, 0, length(scopes) - 1) }
+
+fn define_local(scopes, name) {
+  let top = index(scopes, length(scopes) - 1)
+  let new_top = set(top, name, true)
+  let idx = length(scopes) - 1
+  // Replace the last element
+  let result = slice(scopes, 0, idx)
+  push(result, new_top)
+}
+
+fn is_local(scopes, name) {
+  let mut i = length(scopes) - 1
+  while i >= 0 {
+    if has_key(index(scopes, i), name) {
+      return true
+    }
+    i = i - 1
+  }
+  false
+}
+
+// ---- name resolution ----
+
+fn resolve_ident(name, scopes, user_fns) {
+  if is_local(scopes, name) { return "v_" + name }
+  if has_key(user_fns, name) { return "fn_" + name }
+  if is_builtin(name) { return "b_" + name }
+  "v_" + name
+}
+
+// ---- indentation ----
+
+fn make_indent(level) {
+  let mut s = ""
+  let mut i = 0
+  while i < level {
+    s = s + "\t"
+    i = i + 1
+  }
+  s
+}
+
+// ---- Go string quoting ----
+
+fn go_quote(s) {
+  // Simple quoting: wrap in double quotes, escape special chars
+  let mut result = "\""
+  let mut i = 0
+  while i < length(s) {
+    let ch = char_at(s, i)
+    if ch == "\\" {
+      result = result + "\\\\"
+    } else {
+      if ch == "\"" {
+        result = result + "\\\""
+      } else {
+        if ch == "\n" {
+          result = result + "\\n"
+        } else {
+          if ch == "\t" {
+            result = result + "\\t"
+          } else {
+            result = result + ch
+          }
+        }
+      }
+    }
+    i = i + 1
+  }
+  result + "\""
+}
+
+// ---- expression stringification ----
+
+fn expr_string(node, scopes, user_fns, indent) {
+  let t = get(node, "__type")
+
+  if t == "IntLit" {
+    return "int64(" + to_string(node.value) + ")"
+  }
+
+  if t == "StringLit" {
+    if contains(node.value, "\n") {
+      return "`" + node.value + "`"
+    }
+    return go_quote(node.value)
+  }
+
+  if t == "BoolLit" {
+    if node.value { return "true" }
+    return "false"
+  }
+
+  if t == "Ident" {
+    return resolve_ident(node.name, scopes, user_fns)
+  }
+
+  if t == "BinaryExpr" {
+    let left = expr_string(node.left, scopes, user_fns, indent)
+    let right = expr_string(node.right, scopes, user_fns, indent)
+    return node.op |> match {
+      "+" => "vAdd(" + left + ", " + right + ")"
+      "-" => "vSub(" + left + ", " + right + ")"
+      "*" => "vMul(" + left + ", " + right + ")"
+      "/" => "vDiv(" + left + ", " + right + ")"
+      "==" => "vEq(" + left + ", " + right + ")"
+      "!=" => "vNeq(" + left + ", " + right + ")"
+      "<" => "vLt(" + left + ", " + right + ")"
+      ">" => "vGt(" + left + ", " + right + ")"
+      "<=" => "vLte(" + left + ", " + right + ")"
+      ">=" => "vGte(" + left + ", " + right + ")"
+      _ => "nil /* unknown op */"
+    }
+  }
+
+  if t == "CallExpr" {
+    return call_expr_string(node, scopes, user_fns, indent)
+  }
+
+  if t == "ArrayLit" {
+    if length(node.elements) == 0 { return "[]any{}" }
+    let mut parts = []
+    let mut i = 0
+    while i < length(node.elements) {
+      parts = push(parts, expr_string(index(node.elements, i), scopes, user_fns, indent))
+      i = i + 1
+    }
+    return "[]any{" + join(parts, ", ") + "}"
+  }
+
+  if t == "HashLit" {
+    if length(node.pairs) == 0 { return "map[string]any{}" }
+    let mut parts = []
+    let mut i = 0
+    while i < length(node.pairs) {
+      let pair = index(node.pairs, i)
+      parts = push(parts, go_quote(pair.key) + ": " + expr_string(pair.value, scopes, user_fns, indent))
+      i = i + 1
+    }
+    return "map[string]any{" + join(parts, ", ") + "}"
+  }
+
+  if t == "DotExpr" {
+    return "b_get(" + expr_string(node.object, scopes, user_fns, indent) + ", " + go_quote(node.field) + ")"
+  }
+
+  if t == "FnLit" {
+    return fn_lit_string(node, scopes, user_fns, indent)
+  }
+
+  if t == "FanOutExpr" {
+    let val = expr_string(node.value, scopes, user_fns, indent)
+    let mut fn_strs = []
+    let mut i = 0
+    while i < length(node.fns) {
+      fn_strs = push(fn_strs, expr_string(index(node.fns, i), scopes, user_fns, indent))
+      i = i + 1
+    }
+    return "fanOut(" + val + ", " + join(fn_strs, ", ") + ")"
+  }
+
+  if t == "IfExpr" {
+    return if_expr_string(node, scopes, user_fns, indent)
+  }
+
+  if t == "MatchExpr" {
+    return match_expr_string(node, scopes, user_fns, indent)
+  }
+
+  if t == "InterpLit" {
+    return interp_lit_string(node, scopes, user_fns, indent)
+  }
+
+  "nil /* unknown node: " + t + " */"
+}
+
+fn call_expr_string(node, scopes, user_fns, indent) {
+  let mut arg_strs = []
+  let mut i = 0
+  while i < length(node.args) {
+    arg_strs = push(arg_strs, expr_string(index(node.args, i), scopes, user_fns, indent))
+    i = i + 1
+  }
+  let arg_str = join(arg_strs, ", ")
+
+  let fn_type = get(node.fn_node, "__type")
+  if fn_type == "Ident" {
+    let name = node.fn_node.name
+    if is_local(scopes, name) {
+      let resolved = resolve_ident(name, scopes, user_fns)
+      if length(arg_strs) == 0 {
+        return "callFn(" + resolved + ")"
+      }
+      return "callFn(" + resolved + ", " + arg_str + ")"
+    }
+    let resolved = resolve_ident(name, scopes, user_fns)
+    return resolved + "(" + arg_str + ")"
+  }
+
+  // Dynamic call
+  let fn_expr = expr_string(node.fn_node, scopes, user_fns, indent)
+  if length(arg_strs) == 0 {
+    return "callFn(" + fn_expr + ")"
+  }
+  "callFn(" + fn_expr + ", " + arg_str + ")"
+}
+
+fn fn_lit_string(node, scopes, user_fns, indent) {
+  let mut result = "func(args ...any) any {\n"
+  let new_scopes = push_scope(scopes)
+  let mut s = new_scopes
+
+  let mut i = 0
+  while i < length(node.params) {
+    let p = index(node.params, i)
+    s = define_local(s, p.name)
+    result = result + make_indent(indent + 1) + "v_" + p.name + " := args[" + to_string(i) + "]\n"
+    i = i + 1
+  }
+
+  result = result + emit_body_string(node.body, s, user_fns, indent + 1)
+  result = result + make_indent(indent) + "}"
+  result
+}
+
+fn if_expr_string(node, scopes, user_fns, indent) {
+  // IIFE: func() any { if ... }()
+  let mut result = "func() any {\n"
+  result = result + emit_if_string(node, scopes, user_fns, indent + 1, true)
+  result = result + make_indent(indent) + "}()"
+  result
+}
+
+fn match_expr_string(node, scopes, user_fns, indent) {
+  let mut result = "func() any {\n"
+  result = result + emit_match_return_string(node, scopes, user_fns, indent + 1)
+  result = result + make_indent(indent) + "}()"
+  result
+}
+
+fn interp_lit_string(node, scopes, user_fns, indent) {
+  let mut parts = []
+  let mut i = 0
+  while i < length(node.parts) {
+    let part = index(node.parts, i)
+    let pt = get(part, "__type")
+    if pt == "StringLit" {
+      if part.value != "" {
+        parts = push(parts, go_quote(part.value))
+      }
+    } else {
+      parts = push(parts, "formatValue(" + expr_string(part, scopes, user_fns, indent) + ")")
+    }
+    i = i + 1
+  }
+  if length(parts) == 0 { return "\"\"" }
+  if length(parts) == 1 { return index(parts, 0) }
+  join(parts, " + ")
+}
+
+// ---- statement emission ----
+
+fn emit_statement_string(node, scopes, user_fns, indent) {
+  let t = get(node, "__type")
+  let ind = make_indent(indent)
+
+  if t == "LetStmt" {
+    let val = expr_string(node.value, scopes, user_fns, indent)
+    if node.mutable {
+      return #{code: ind + "var v_" + node.name + " any = " + val + "\n", scopes: define_local(scopes, node.name)}
+    }
+    return #{code: ind + "v_" + node.name + " := " + val + "\n", scopes: define_local(scopes, node.name)}
+  }
+
+  if t == "AssignStmt" {
+    let val = expr_string(node.value, scopes, user_fns, indent)
+    return #{code: ind + "v_" + node.name + " = " + val + "\n", scopes: scopes}
+  }
+
+  if t == "WhileExpr" {
+    let cond = expr_string(node.condition, scopes, user_fns, indent)
+    let mut code = ind + "for isTruthy(" + cond + ") {\n"
+    let mut i = 0
+    let mut s = scopes
+    while i < length(node.body) {
+      let r = emit_statement_string(index(node.body, i), s, user_fns, indent + 1)
+      code = code + get(r, "code")
+      s = get(r, "scopes")
+      i = i + 1
+    }
+    code = code + ind + "}\n"
+    return #{code: code, scopes: scopes}
+  }
+
+  if t == "ReturnStmt" {
+    if node.value == 0 {
+      return #{code: ind + "return nil\n", scopes: scopes}
+    }
+    let val = expr_string(node.value, scopes, user_fns, indent)
+    return #{code: ind + "return " + val + "\n", scopes: scopes}
+  }
+
+  if t == "IfExpr" {
+    return #{code: emit_if_string(node, scopes, user_fns, indent, false), scopes: scopes}
+  }
+
+  // Default: expression statement
+  let val = expr_string(node, scopes, user_fns, indent)
+  #{code: ind + "_ = " + val + "\n", scopes: scopes}
+}
+
+// ---- return node emission ----
+
+fn emit_return_node_string(node, scopes, user_fns, indent) {
+  let t = get(node, "__type")
+  let ind = make_indent(indent)
+
+  if t == "LetStmt" {
+    let r = emit_statement_string(node, scopes, user_fns, indent)
+    return get(r, "code") + ind + "return nil\n"
+  }
+  if t == "AssignStmt" {
+    let r = emit_statement_string(node, scopes, user_fns, indent)
+    return get(r, "code") + ind + "return nil\n"
+  }
+  if t == "WhileExpr" {
+    let r = emit_statement_string(node, scopes, user_fns, indent)
+    return get(r, "code") + ind + "return nil\n"
+  }
+  if t == "ReturnStmt" {
+    let r = emit_statement_string(node, scopes, user_fns, indent)
+    return get(r, "code")
+  }
+  if t == "IfExpr" {
+    return emit_if_string(node, scopes, user_fns, indent, true)
+  }
+  if t == "MatchExpr" {
+    return emit_match_return_string(node, scopes, user_fns, indent)
+  }
+
+  // Default: return the expression
+  ind + "return " + expr_string(node, scopes, user_fns, indent) + "\n"
+}
+
+// ---- body emission ----
+
+fn emit_body_string(body, scopes, user_fns, indent) {
+  if length(body) == 0 {
+    return make_indent(indent) + "return nil\n"
+  }
+  let mut result = ""
+  let mut s = scopes
+  let mut i = 0
+  while i < length(body) {
+    let is_last = i == length(body) - 1
+    if is_last {
+      result = result + emit_return_node_string(index(body, i), s, user_fns, indent)
+    } else {
+      let r = emit_statement_string(index(body, i), s, user_fns, indent)
+      result = result + get(r, "code")
+      s = get(r, "scopes")
+    }
+    i = i + 1
+  }
+  result
+}
+
+// ---- if emission ----
+
+fn emit_if_string(node, scopes, user_fns, indent, is_return) {
+  let ind = make_indent(indent)
+  let cond = expr_string(node.condition, scopes, user_fns, indent)
+  let mut result = ind + "if isTruthy(" + cond + ") {\n"
+
+  if is_return {
+    result = result + emit_body_string(node.then_body, scopes, user_fns, indent + 1)
+  } else {
+    let mut i = 0
+    let mut s = scopes
+    while i < length(node.then_body) {
+      let r = emit_statement_string(index(node.then_body, i), s, user_fns, indent + 1)
+      result = result + get(r, "code")
+      s = get(r, "scopes")
+      i = i + 1
+    }
+  }
+
+  if length(node.else_body) > 0 {
+    result = result + ind + "} else {\n"
+    if is_return {
+      result = result + emit_body_string(node.else_body, scopes, user_fns, indent + 1)
+    } else {
+      let mut i = 0
+      let mut s = scopes
+      while i < length(node.else_body) {
+        let r = emit_statement_string(index(node.else_body, i), s, user_fns, indent + 1)
+        result = result + get(r, "code")
+        s = get(r, "scopes")
+        i = i + 1
+      }
+    }
+  } else {
+    if is_return {
+      result = result + ind + "} else {\n"
+      result = result + make_indent(indent + 1) + "return nil\n"
+    }
+  }
+
+  result + ind + "}\n"
+}
+
+// ---- match emission ----
+
+fn is_wildcard(node) {
+  if get(node, "__type") == "Ident" {
+    return node.name == "_"
+  }
+  false
+}
+
+fn emit_match_return_string(node, scopes, user_fns, indent) {
+  let ind = make_indent(indent)
+  let subject = expr_string(node.subject, scopes, user_fns, indent)
+  let mut result = ""
+  let mut i = 0
+  while i < length(node.arms) {
+    let arm = index(node.arms, i)
+    if is_wildcard(arm.pattern) {
+      result = result + ind + "return " + expr_string(arm.body, scopes, user_fns, indent) + "\n"
+      return result
+    }
+    let pt = get(arm.pattern, "__type")
+    if pt == "TypePattern" {
+      result = result + ind + "if _tv, _tvOk := " + subject + ".(map[string]any); _tvOk && _tv[\"__type\"] == " + go_quote(arm.pattern.type_name) + " {\n"
+      let s2 = define_local(scopes, arm.pattern.binding)
+      result = result + make_indent(indent + 1) + "v_" + arm.pattern.binding + " := " + subject + "\n"
+      result = result + make_indent(indent + 1) + "return " + expr_string(arm.body, s2, user_fns, indent + 1) + "\n"
+      result = result + ind + "}\n"
+    } else {
+      result = result + ind + "if valuesEqual(" + subject + ", " + expr_string(arm.pattern, scopes, user_fns, indent) + ") {\n"
+      result = result + make_indent(indent + 1) + "return " + expr_string(arm.body, scopes, user_fns, indent + 1) + "\n"
+      result = result + ind + "}\n"
+    }
+    i = i + 1
+  }
+  result + ind + "return nil\n"
+}
+
+// ---- top-level generate ----
+
+fn generate(prog) {
+  // First pass: collect user function and struct names
+  let mut user_fns = #{}
+  let mut i = 0
+  while i < length(prog.decls) {
+    let decl = index(prog.decls, i)
+    let dt = get(decl, "__type")
+    if dt == "FnDecl" {
+      user_fns = set(user_fns, decl.name, true)
+    }
+    if dt == "StructDecl" {
+      user_fns = set(user_fns, decl.name, true)
+    }
+    i = i + 1
+  }
+
+  // Emit preamble + declarations
+  let mut result = get_preamble()
+
+  i = 0
+  while i < length(prog.decls) {
+    let decl = index(prog.decls, i)
+    let dt = get(decl, "__type")
+
+    if dt == "FnDecl" {
+      result = result + emit_fn_decl(decl, user_fns)
+    }
+    if dt == "StructDecl" {
+      result = result + emit_struct_decl(decl)
+    }
+    i = i + 1
+  }
+
+  result = result + "\nfunc main() {\n\tfn_main()\n}\n"
+  result
+}
+
+fn emit_fn_decl(decl, user_fns) {
+  let mut scopes = push_scope([])
+
+  let mut result = "\nfunc fn_" + decl.name + "(args ...any) any {\n"
+
+  let mut i = 0
+  while i < length(decl.params) {
+    let p = index(decl.params, i)
+    scopes = define_local(scopes, p.name)
+    result = result + "\tv_" + p.name + " := args[" + to_string(i) + "]\n"
+    i = i + 1
+  }
+
+  result = result + emit_body_string(decl.body, scopes, user_fns, 1)
+  result + "}\n"
+}
+
+fn emit_struct_decl(decl) {
+  let mut result = "\nfunc fn_" + decl.name + "(args ...any) any {\n"
+  result = result + "\treturn map[string]any{"
+  result = result + "\"__type\": " + go_quote(decl.name)
+  let mut i = 0
+  while i < length(decl.fields) {
+    let field = index(decl.fields, i)
+    result = result + ", " + go_quote(field) + ": args[" + to_string(i) + "]"
+    i = i + 1
+  }
+  result + "}\n}\n"
+}
+
+// ---- preamble ----
+// The Go runtime that every generated program needs.
+// This is the same preamble as in the Go compiler.
+
+fn get_preamble() {
+  read_file("internal/codegen/preamble_text.txt")
+}
