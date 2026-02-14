@@ -1,4 +1,4 @@
-.PHONY: build run test clean fmt vet lint check
+.PHONY: build run test clean fmt vet lint check tidy install-ext
 
 BINARY := vyr
 
@@ -31,3 +31,12 @@ tidy:
 	go mod tidy
 
 check: fmt vet test
+
+install-ext:
+	ln -sfn $(CURDIR)/editors/vscode ~/.vscode/extensions/nickyhof.vyr-0.1.0
+	@echo "Installed to VS Code."
+	@if [ -d ~/.antigravity/extensions ]; then \
+		ln -sfn $(CURDIR)/editors/vscode ~/.antigravity/extensions/nickyhof.vyr-0.1.0; \
+		echo "Installed to Antigravity."; \
+	fi
+	@echo "Reload your editor to activate."
