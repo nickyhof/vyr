@@ -9,7 +9,7 @@
 // ---- AST node types ----
 
 struct Program { decls }
-struct FnDecl { name, params, return_type, body }
+struct FnDecl { name, params, return_type, body, doc }
 struct Param { name, type_name }
 struct LetStmt { name, value, mutable }
 struct IfExpr { condition, then_body, else_body }
@@ -31,7 +31,7 @@ struct Ident { name }
 struct ImportDecl { path }
 struct WhileExpr { condition, body }
 struct AssignStmt { name, value }
-struct StructDecl { name, fields }
+struct StructDecl { name, fields, doc }
 struct TypePattern { type_name, binding }
 struct ReturnStmt { value }
 struct InterpLit { parts }
@@ -80,15 +80,24 @@ fn parse(tokens) {
 // ---- declarations ----
 
 fn parse_decl(tokens, pos) {
-  let tok = p_current(tokens, pos)
+  // Collect doc comments
+  let mut p = pos
+  let mut doc_lines = []
+  while p_check(tokens, p, "DOC_COMMENT") {
+    doc_lines = push(doc_lines, (p_current(tokens, p)).literal)
+    p = p + 1
+  }
+  let doc = join(doc_lines, "\n")
+
+  let tok = p_current(tokens, p)
   if tok.type == "IMPORT" {
-    return parse_import(tokens, pos)
+    return parse_import(tokens, p)
   }
   if tok.type == "FN" {
-    return parse_fn_decl(tokens, pos)
+    return parse_fn_decl(tokens, p, doc)
   }
   if tok.type == "STRUCT" {
-    return parse_struct_decl(tokens, pos)
+    return parse_struct_decl(tokens, p, doc)
   }
   make_err("expected declaration, got " + tok.type + "(" + tok.literal + ") at line " + to_string(tok.line))
 }
@@ -104,7 +113,7 @@ fn parse_import(tokens, pos) {
   #{node: ImportDecl(tok.literal), error: "", pos: p}
 }
 
-fn parse_fn_decl(tokens, pos) {
+fn parse_fn_decl(tokens, pos, doc) {
   // fn name(params) { body }
   let mut p = pos + 1 // skip 'fn'
   let name_tok = p_current(tokens, p)
@@ -138,7 +147,7 @@ fn parse_fn_decl(tokens, pos) {
   p = get(body_result, "pos")
   let body = get(body_result, "node")
 
-  #{node: FnDecl(name, params, return_type, body), error: "", pos: p}
+  #{node: FnDecl(name, params, return_type, body, doc), error: "", pos: p}
 }
 
 fn parse_param_list(tokens, pos) {
@@ -762,7 +771,7 @@ fn parse_interp_lit(tokens, pos) {
   #{node: InterpLit(parts), error: "", pos: p}
 }
 
-fn parse_struct_decl(tokens, pos) {
+fn parse_struct_decl(tokens, pos, doc) {
   // struct Name { field1, field2, ... }
   let mut p = pos + 1 // skip 'struct'
   let name_tok = p_current(tokens, p)
@@ -800,5 +809,5 @@ fn parse_struct_decl(tokens, pos) {
   }
 
   p = p + 1 // skip }
-  #{node: StructDecl(name_tok.literal, fields), error: "", pos: p}
+  #{node: StructDecl(name_tok.literal, fields, doc), error: "", pos: p}
 }

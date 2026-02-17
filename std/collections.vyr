@@ -1,56 +1,67 @@
 // std/collections — Collection utilities for Vyr
-// Higher-order operations built on filter, reduce, map, and builtins.
 
+/// Returns true if any element in xs satisfies pred.
 fn any(xs, pred) {
   let matches = xs |> filter(pred) |> length
   matches > 0
 }
 
+/// Returns true if all elements in xs satisfy pred.
 fn all(xs, pred) {
   let matches = xs |> filter(pred) |> length
   let total = xs |> length
   matches == total
 }
 
+/// Returns true if no elements in xs satisfy pred.
 fn none(xs, pred) {
   let matches = xs |> filter(pred) |> length
   matches == 0
 }
 
+/// Counts how many elements in xs satisfy pred.
 fn count(xs, pred) {
   xs |> filter(pred) |> length
 }
 
+/// Returns the first element in xs that satisfies pred.
 fn find(xs, pred) {
   xs |> filter(pred) |> head
 }
 
+/// Returns the first element of xs.
 fn first(xs) {
   xs |> head
 }
 
+/// Returns the last element of xs.
 fn last(xs) {
   let len = xs |> length
   index(xs, len - 1)
 }
 
+/// Returns the first n elements of xs.
 fn take(xs, n) {
   slice(xs, 0, n)
 }
 
+/// Returns xs with the first n elements removed.
 fn drop(xs, n) {
   let len = xs |> length
   slice(xs, n, len)
 }
 
+/// Flattens a list of lists into a single list.
 fn flatten(xs) {
   xs |> reduce([], fn(acc, x) { concat(acc, x) })
 }
 
+/// Maps f over xs, then flattens the result.
 fn flat_map(xs, f) {
   xs |> map(f) |> flatten
 }
 
+/// Pairs elements from a and b into [a_i, b_i] tuples.
 fn zip(a, b) {
   let len_a = a |> length
   let len_b = b |> length
@@ -58,11 +69,13 @@ fn zip(a, b) {
   len |> range |> map(fn(i) { [index(a, i), index(b, i)] })
 }
 
+/// Pairs each element with its index as [i, x_i].
 fn enumerate(xs) {
   let len = xs |> length
   len |> range |> map(fn(i) { [i, index(xs, i)] })
 }
 
+/// Splits xs into chunks of the given size.
 fn chunk(xs, size) {
   let len = xs |> length
   let num_chunks = len / size
@@ -77,22 +90,26 @@ fn chunk(xs, size) {
   })
 }
 
+/// Returns the maximum element in xs.
 fn max_of(xs) {
   let h = xs |> head
   xs |> reduce(h, fn(a, x) { if x > a { x } else { a } })
 }
 
+/// Returns the minimum element in xs.
 fn min_of(xs) {
   let h = xs |> head
   xs |> reduce(h, fn(a, x) { if x < a { x } else { a } })
 }
 
+/// Returns xs with duplicate elements removed.
 fn unique(xs) {
   xs |> reduce([], fn(acc, x) {
     if contains(acc, x) { acc } else { concat(acc, [x]) }
   })
 }
 
+/// Groups elements by key function f into a hashmap of lists.
 fn group_by(xs, f) {
   xs |> reduce(#{}, fn(acc, x) {
     let key = to_string(f(x))
@@ -101,6 +118,7 @@ fn group_by(xs, f) {
   })
 }
 
+/// Merge sort helper: merges two sorted lists using key function f.
 fn merge_sorted(a, b, f) {
   if length(a) == 0 { return b }
   if length(b) == 0 { return a }
@@ -115,6 +133,7 @@ fn merge_sorted(a, b, f) {
   }
 }
 
+/// Sorts xs by the value returned by key function f (merge sort).
 fn sort_by(xs, f) {
   let len = xs |> length
   if len <= 1 { return xs }
@@ -124,12 +143,14 @@ fn sort_by(xs, f) {
   merge_sorted(left, right, f)
 }
 
+/// Splits xs into [matches, non_matches] based on pred.
 fn partition(xs, pred) {
   let yes = xs |> filter(pred)
   let no = xs |> filter(fn(x) { if pred(x) { false } else { true } })
   [yes, no]
 }
 
+/// Like reduce but returns all intermediate accumulator values.
 fn scan(xs, init, f) {
   let mut result = [init]
   let mut acc = init
@@ -142,6 +163,7 @@ fn scan(xs, init, f) {
   result
 }
 
+/// Returns sliding windows of the given size over xs.
 fn window(xs, size) {
   let len = xs |> length
   if size > len { return [xs] }
@@ -151,6 +173,7 @@ fn window(xs, size) {
   })
 }
 
+/// Counts occurrences of each element, returning a hashmap.
 fn frequencies(xs) {
   xs |> reduce(#{}, fn(acc, x) {
     let key = to_string(x)
@@ -159,6 +182,7 @@ fn frequencies(xs) {
   })
 }
 
+/// Returns the index of the first occurrence of val in xs, or -1.
 fn index_of(xs, val) {
   let mut i = 0
   while i < length(xs) {
@@ -168,6 +192,7 @@ fn index_of(xs, val) {
   0 - 1
 }
 
+/// Zips a and b together using function f(a_i, b_i).
 fn zip_with(a, b, f) {
   let len_a = a |> length
   let len_b = b |> length
@@ -175,6 +200,7 @@ fn zip_with(a, b, f) {
   len |> range |> map(fn(i) { f(index(a, i), index(b, i)) })
 }
 
+/// Interleaves elements from a and b alternately.
 fn interleave(a, b) {
   let len_a = a |> length
   let len_b = b |> length
@@ -186,7 +212,6 @@ fn interleave(a, b) {
     result = push(result, index(b, i))
     i = i + 1
   }
-  // Append remaining elements from the longer list
   while i < len_a {
     result = push(result, index(a, i))
     i = i + 1

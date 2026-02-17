@@ -1,6 +1,9 @@
 # Binary
 vyrc
 
+# Generated docs (built by CI)
+docs/
+
 # Coverage
 coverage.out
 coverage.html

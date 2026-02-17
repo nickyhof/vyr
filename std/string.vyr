@@ -1,34 +1,40 @@
 // std/string — String utilities for Vyr
-// Compositions of string builtins into higher-level operations.
 
+/// Repeats string s n times.
 fn repeat(s, n) {
   if n <= 0 { "" } else { s + repeat(s, n - 1) }
 }
 
+/// Pads s on the left with fill to reach width.
 fn pad_left(s, width, fill) {
   let current = s |> length
   if current >= width { s } else { repeat(fill, width - current) + s }
 }
 
+/// Pads s on the right with fill to reach width.
 fn pad_right(s, width, fill) {
   let current = s |> length
   if current >= width { s } else { s + repeat(fill, width - current) }
 }
 
+/// Returns true if s is the empty string.
 fn is_empty(s) {
   let len = s |> length
   len == 0
 }
 
+/// Splits s by spaces into a list of words.
 fn words(s) {
   s |> split(" ")
 }
 
+/// Returns a list of individual characters in s.
 fn chars(s) {
   let len = s |> length
   len |> range |> map(fn(i) { char_at(s, i) })
 }
 
+/// Capitalizes the first letter of s, lowercases the rest.
 fn capitalize(s) {
   let len = s |> length
   if len == 0 { s } else {
@@ -38,30 +44,37 @@ fn capitalize(s) {
   }
 }
 
+/// Splits s by newlines into a list of lines.
 fn lines(s) {
   s |> split("\n")
 }
 
+/// Joins a list of words with spaces.
 fn unwords(ws) {
   ws |> join(" ")
 }
 
+/// Joins a list of lines with newlines.
 fn unlines(ls) {
   ls |> join("\n")
 }
 
+/// Capitalizes the first letter of each word.
 fn title_case(s) {
   s |> words |> map(fn(w) { capitalize(w) }) |> unwords
 }
 
+/// Returns true if ch is an uppercase letter.
 fn is_upper_char(ch) {
   if uppercase(ch) == ch { lowercase(ch) != ch } else { false }
 }
 
+/// Returns true if ch is a lowercase letter.
 fn is_lower_char(ch) {
   if lowercase(ch) == ch { uppercase(ch) != ch } else { false }
 }
 
+/// Converts a string to snake_case (splits on uppercase and spaces).
 fn snake_case(s) {
   let chs = chars(s)
   let len = length(chs)
@@ -84,10 +97,12 @@ fn snake_case(s) {
   result
 }
 
+/// Converts a string to kebab-case (splits on uppercase and spaces).
 fn kebab_case(s) {
   snake_case(s) |> replace("_", "-")
 }
 
+/// Removes prefix from the start of s if present.
 fn strip_prefix(s, prefix) {
   if starts_with(s, prefix) {
     substring(s, length(prefix), length(s))
@@ -96,6 +111,7 @@ fn strip_prefix(s, prefix) {
   }
 }
 
+/// Removes suffix from the end of s if present.
 fn strip_suffix(s, suffix) {
   if ends_with(s, suffix) {
     substring(s, 0, length(s) - length(suffix))
@@ -104,21 +120,25 @@ fn strip_suffix(s, suffix) {
   }
 }
 
+/// Truncates s to max_len characters, appending ellipsis if truncated.
 fn truncate(s, max_len, ellipsis) {
   if length(s) <= max_len { s } else {
     substring(s, 0, max_len) + ellipsis
   }
 }
 
+/// Counts non-overlapping occurrences of sub in s.
 fn count_occurrences(s, sub) {
   let parts = s |> split(sub)
   length(parts) - 1
 }
 
+/// Returns true if ch is a digit character (0-9).
 fn is_digit(ch) {
   if ch >= "0" { ch <= "9" } else { false }
 }
 
+/// Returns true if ch is an alphabetic character (a-z, A-Z).
 fn is_alpha(ch) {
   let lower = lowercase(ch)
   if lower >= "a" { lower <= "z" } else { false }

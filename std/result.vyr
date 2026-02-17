@@ -1,6 +1,6 @@
 // std/result — Result type utilities for Vyr
-// Higher-order operations for composing Ok/Err pipelines.
 
+/// Maps f over the Ok value, leaving Err unchanged.
 fn map_ok(result, f) {
   if is_ok(result) {
     let val = unwrap(result)
@@ -10,6 +10,7 @@ fn map_ok(result, f) {
   }
 }
 
+/// Maps f over the Err value, leaving Ok unchanged.
 fn map_err(result, f) {
   if is_err(result) {
     let val = unwrap_err(result)
@@ -19,6 +20,7 @@ fn map_err(result, f) {
   }
 }
 
+/// Chains a function that returns a Result on the Ok value.
 fn and_then(result, f) {
   if is_ok(result) {
     let val = unwrap(result)
@@ -28,6 +30,7 @@ fn and_then(result, f) {
   }
 }
 
+/// Calls f with the result if it is Err, otherwise returns Ok.
 fn or_else(result, f) {
   if is_err(result) {
     f(result)
@@ -36,6 +39,7 @@ fn or_else(result, f) {
   }
 }
 
+/// Flattens a nested Result (Ok(Ok(x)) becomes Ok(x)).
 fn flatten_result(result) {
   if is_ok(result) {
     unwrap(result)
@@ -44,6 +48,8 @@ fn flatten_result(result) {
   }
 }
 
+/// Collects a list of Results into a Result of a list.
+/// Returns Err on the first error found.
 fn collect_results(xs) {
   let mut values = []
   let mut i = 0
@@ -56,6 +62,7 @@ fn collect_results(xs) {
   ok(values)
 }
 
+/// Runs side-effect f on the Ok value, returns original result.
 fn tap_ok(result, f) {
   if is_ok(result) {
     f(unwrap(result))
@@ -63,6 +70,7 @@ fn tap_ok(result, f) {
   result
 }
 
+/// Runs side-effect f on the Err value, returns original result.
 fn tap_err(result, f) {
   if is_err(result) {
     f(unwrap_err(result))
@@ -70,6 +78,7 @@ fn tap_err(result, f) {
   result
 }
 
+/// Converts a Result to a human-readable string.
 fn result_to_string(result) {
   if is_ok(result) {
     "Ok(" + to_string(unwrap(result)) + ")"

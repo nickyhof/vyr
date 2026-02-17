@@ -240,6 +240,16 @@ fn read_string_continuation(s, sl, sc) {
   s_emit(s6, Token("INTERP_START", "\${", s_line(s6), s_col(s6)))
 }
 
+fn read_doc_comment(s, sl, sc, buf) {
+  if s_eof(s) {
+    return s_emit(s, Token("DOC_COMMENT", trim(buf), sl, sc))
+  }
+  if s_ch(s) == "\n" {
+    return s_emit(s, Token("DOC_COMMENT", trim(buf), sl, sc))
+  }
+  read_doc_comment(s_advance(s), sl, sc, buf + s_ch(s))
+}
+
 // ---- main scan loop ----
 
 fn scan_token(s) {
@@ -255,6 +265,22 @@ fn scan_token(s) {
   // Comments
   if ch == "/" {
     if s_peek(s2) == "/" {
+      // Check for /// doc comment
+      let p = s_pos(s2) + 2
+      if p < s_len(s2) {
+        if s_at(s2, p) == "/" {
+          // Doc comment: skip /// and read rest of line
+          let s3 = s_advance(s_advance(s_advance(s2)))
+          // Skip one optional space after ///
+          if s_eof(s3) == false {
+            if s_ch(s3) == " " {
+              return read_doc_comment(s_advance(s3), sl, sc, "")
+            }
+          }
+          return read_doc_comment(s3, sl, sc, "")
+        }
+      }
+      // Regular comment: skip
       return scan_token(skip_line_comment(s_advance(s_advance(s2))))
     }
     // Slash operator

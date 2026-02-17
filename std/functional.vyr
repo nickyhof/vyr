@@ -1,31 +1,38 @@
 // std/functional — Function composition utilities for Vyr
 
+/// Composes two functions: compose(f, g)(x) == g(f(x)).
 fn compose(f, g) {
   fn(x) { x |> f |> g }
 }
 
+/// Composes a list of functions left-to-right.
 fn pipe(fns) {
   reduce(fns, fn(x) { x }, fn(acc, f) {
     fn(x) { x |> acc |> f }
   })
 }
 
+/// Returns its argument unchanged.
 fn identity(x) {
   x
 }
 
+/// Returns a function that always returns x.
 fn constant(x) {
   fn() { x }
 }
 
+/// Returns a function with its two arguments swapped.
 fn flip(f) {
   fn(a, b) { f(b, a) }
 }
 
+/// Partially applies x as the first argument to f.
 fn partial(f, x) {
   fn(y) { f(x, y) }
 }
 
+/// Returns a cached version of f (single-argument functions).
 fn memoize(f) {
   let mut cache = #{}
   fn(x) {

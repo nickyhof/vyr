@@ -1,4 +1,4 @@
-.PHONY: test clean bootstrap
+.PHONY: test clean bootstrap docs
 
 # Bootstrap: rebuild vyrc binary and update the checked-in Go source
 bootstrap:
@@ -35,3 +35,6 @@ install-ext:
 		echo "Installed to Antigravity."; \
 	fi
 	@echo "Reload your editor to activate."
+
+docs:
+	@python3 scripts/gendocs.py

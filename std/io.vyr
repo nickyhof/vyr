@@ -1,14 +1,16 @@
 // std/io — I/O utilities for Vyr
-// Compositions of I/O builtins into higher-level operations.
 
+/// Reads a file and returns its lines as a list.
 fn read_lines(path) {
   read_file(path) |> split("\n")
 }
 
+/// Writes a list of lines to a file, joining with newlines.
 fn write_lines(path, lines) {
   lines |> join("\n") |> write_file(path)
 }
 
+/// Safely reads a file and returns its lines as a Result.
 fn try_read_lines(path) {
   try_read_file(path) |> map_ok(fn(content) {
     content |> split("\n")

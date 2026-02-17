@@ -1027,6 +1027,21 @@ func fn_read_string_continuation(args ...any) any {
 	return fn_s_emit(v_s6, fn_Token("INTERP_START", "${", fn_s_line(v_s6), fn_s_col(v_s6)))
 }
 
+func fn_read_doc_comment(args ...any) any {
+	v_s := args[0]
+	v_sl := args[1]
+	v_sc := args[2]
+	v_buf := args[3]
+	if isTruthy(fn_s_eof(v_s)) {
+		return fn_s_emit(v_s, fn_Token("DOC_COMMENT", b_trim(v_buf), v_sl, v_sc))
+	}
+	if isTruthy(vEq(fn_s_ch(v_s), `
+`)) {
+		return fn_s_emit(v_s, fn_Token("DOC_COMMENT", b_trim(v_buf), v_sl, v_sc))
+	}
+	return fn_read_doc_comment(fn_s_advance(v_s), v_sl, v_sc, vAdd(v_buf, fn_s_ch(v_s)))
+}
+
 func fn_scan_token(args ...any) any {
 	v_s := args[0]
 	v_s2 := fn_skip_whitespace(v_s)
@@ -1038,6 +1053,18 @@ func fn_scan_token(args ...any) any {
 	v_sc := fn_s_col(v_s2)
 	if isTruthy(vEq(v_ch, "/")) {
 		if isTruthy(vEq(fn_s_peek(v_s2), "/")) {
+			v_p := vAdd(fn_s_pos(v_s2), int64(2))
+			if isTruthy(vLt(v_p, fn_s_len(v_s2))) {
+				if isTruthy(vEq(fn_s_at(v_s2, v_p), "/")) {
+					v_s3 := fn_s_advance(fn_s_advance(fn_s_advance(v_s2)))
+					if isTruthy(vEq(fn_s_eof(v_s3), false)) {
+						if isTruthy(vEq(fn_s_ch(v_s3), " ")) {
+							return fn_read_doc_comment(fn_s_advance(v_s3), v_sl, v_sc, "")
+						}
+					}
+					return fn_read_doc_comment(v_s3, v_sl, v_sc, "")
+				}
+			}
 			return fn_scan_token(fn_skip_line_comment(fn_s_advance(fn_s_advance(v_s2))))
 		}
 		return fn_s_emit(fn_s_advance(v_s2), fn_Token("SLASH", "/", v_sl, v_sc))
@@ -1169,7 +1196,7 @@ func fn_Program(args ...any) any {
 }
 
 func fn_FnDecl(args ...any) any {
-	return map[string]any{"__type": "FnDecl", "name": args[0], "params": args[1], "return_type": args[2], "body": args[3]}
+	return map[string]any{"__type": "FnDecl", "name": args[0], "params": args[1], "return_type": args[2], "body": args[3], "doc": args[4]}
 }
 
 func fn_Param(args ...any) any {
@@ -1257,7 +1284,7 @@ func fn_AssignStmt(args ...any) any {
 }
 
 func fn_StructDecl(args ...any) any {
-	return map[string]any{"__type": "StructDecl", "name": args[0], "fields": args[1]}
+	return map[string]any{"__type": "StructDecl", "name": args[0], "fields": args[1], "doc": args[2]}
 }
 
 func fn_TypePattern(args ...any) any {
@@ -1333,15 +1360,23 @@ func fn_parse(args ...any) any {
 func fn_parse_decl(args ...any) any {
 	v_tokens := args[0]
 	v_pos := args[1]
-	v_tok := fn_p_current(v_tokens, v_pos)
+	var v_p any = v_pos
+	var v_doc_lines any = []any{}
+	for isTruthy(fn_p_check(v_tokens, v_p, "DOC_COMMENT")) {
+		v_doc_lines = b_push(v_doc_lines, b_get(fn_p_current(v_tokens, v_p), "literal"))
+		v_p = vAdd(v_p, int64(1))
+	}
+	v_doc := b_join(v_doc_lines, `
+`)
+	v_tok := fn_p_current(v_tokens, v_p)
 	if isTruthy(vEq(b_get(v_tok, "type"), "IMPORT")) {
-		return fn_parse_import(v_tokens, v_pos)
+		return fn_parse_import(v_tokens, v_p)
 	}
 	if isTruthy(vEq(b_get(v_tok, "type"), "FN")) {
-		return fn_parse_fn_decl(v_tokens, v_pos)
+		return fn_parse_fn_decl(v_tokens, v_p, v_doc)
 	}
 	if isTruthy(vEq(b_get(v_tok, "type"), "STRUCT")) {
-		return fn_parse_struct_decl(v_tokens, v_pos)
+		return fn_parse_struct_decl(v_tokens, v_p, v_doc)
 	}
 	return fn_make_err(vAdd(vAdd(vAdd(vAdd(vAdd("expected declaration, got ", b_get(v_tok, "type")), "("), b_get(v_tok, "literal")), ") at line "), b_to_string(b_get(v_tok, "line"))))
 }
@@ -1361,6 +1396,7 @@ func fn_parse_import(args ...any) any {
 func fn_parse_fn_decl(args ...any) any {
 	v_tokens := args[0]
 	v_pos := args[1]
+	v_doc := args[2]
 	var v_p any = vAdd(v_pos, int64(1))
 	v_name_tok := fn_p_current(v_tokens, v_p)
 	if isTruthy(vNeq(b_get(v_name_tok, "type"), "IDENT")) {
@@ -1390,7 +1426,7 @@ func fn_parse_fn_decl(args ...any) any {
 	}
 	v_p = b_get(v_body_result, "pos")
 	v_body := b_get(v_body_result, "node")
-	return map[string]any{"node": fn_FnDecl(v_name, v_params, v_return_type, v_body), "error": "", "pos": v_p}
+	return map[string]any{"node": fn_FnDecl(v_name, v_params, v_return_type, v_body, v_doc), "error": "", "pos": v_p}
 }
 
 func fn_parse_param_list(args ...any) any {
@@ -2033,6 +2069,7 @@ func fn_parse_interp_lit(args ...any) any {
 func fn_parse_struct_decl(args ...any) any {
 	v_tokens := args[0]
 	v_pos := args[1]
+	v_doc := args[2]
 	var v_p any = vAdd(v_pos, int64(1))
 	v_name_tok := fn_p_current(v_tokens, v_p)
 	if isTruthy(vNeq(b_get(v_name_tok, "type"), "IDENT")) {
@@ -2065,7 +2102,7 @@ func fn_parse_struct_decl(args ...any) any {
 		}
 	}
 	v_p = vAdd(v_p, int64(1))
-	return map[string]any{"node": fn_StructDecl(b_get(v_name_tok, "literal"), v_fields), "error": "", "pos": v_p}
+	return map[string]any{"node": fn_StructDecl(b_get(v_name_tok, "literal"), v_fields, v_doc), "error": "", "pos": v_p}
 }
 
 func fn_is_builtin(args ...any) any {
