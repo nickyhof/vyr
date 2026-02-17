@@ -37,3 +37,89 @@ fn capitalize(s) {
     first + rest
   }
 }
+
+fn lines(s) {
+  s |> split("\n")
+}
+
+fn unwords(ws) {
+  ws |> join(" ")
+}
+
+fn unlines(ls) {
+  ls |> join("\n")
+}
+
+fn title_case(s) {
+  s |> words |> map(fn(w) { capitalize(w) }) |> unwords
+}
+
+fn is_upper_char(ch) {
+  if uppercase(ch) == ch { lowercase(ch) != ch } else { false }
+}
+
+fn is_lower_char(ch) {
+  if lowercase(ch) == ch { uppercase(ch) != ch } else { false }
+}
+
+fn snake_case(s) {
+  let chs = chars(s)
+  let len = length(chs)
+  let mut result = ""
+  let mut i = 0
+  while i < len {
+    let ch = index(chs, i)
+    if is_upper_char(ch) {
+      if i > 0 { result = result + "_" }
+      result = result + lowercase(ch)
+    } else {
+      if ch == " " {
+        result = result + "_"
+      } else {
+        result = result + ch
+      }
+    }
+    i = i + 1
+  }
+  result
+}
+
+fn kebab_case(s) {
+  snake_case(s) |> replace("_", "-")
+}
+
+fn strip_prefix(s, prefix) {
+  if starts_with(s, prefix) {
+    substring(s, length(prefix), length(s))
+  } else {
+    s
+  }
+}
+
+fn strip_suffix(s, suffix) {
+  if ends_with(s, suffix) {
+    substring(s, 0, length(s) - length(suffix))
+  } else {
+    s
+  }
+}
+
+fn truncate(s, max_len, ellipsis) {
+  if length(s) <= max_len { s } else {
+    substring(s, 0, max_len) + ellipsis
+  }
+}
+
+fn count_occurrences(s, sub) {
+  let parts = s |> split(sub)
+  length(parts) - 1
+}
+
+fn is_digit(ch) {
+  if ch >= "0" { ch <= "9" } else { false }
+}
+
+fn is_alpha(ch) {
+  let lower = lowercase(ch)
+  if lower >= "a" { lower <= "z" } else { false }
+}

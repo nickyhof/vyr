@@ -619,6 +619,14 @@ func b_unwrap_or(args ...any) any {
 	return args[1]
 }
 
+func b_unwrap_err(args ...any) any {
+	r := args[0].(*Result)
+	if r.Ok {
+		panic(fmt.Sprintf("unwrap_err called on Ok: %v", r.Value))
+	}
+	return r.Value
+}
+
 func b_try_read_file(args ...any) any {
 	path := args[0].(string)
 	data, err := os.ReadFile(path)
@@ -2191,6 +2199,9 @@ func fn_is_builtin(args ...any) any {
 	if valuesEqual(v_name, "unwrap_or") {
 		return true
 	}
+	if valuesEqual(v_name, "unwrap_err") {
+		return true
+	}
 	if valuesEqual(v_name, "try_read_file") {
 		return true
 	}
@@ -2820,6 +2831,42 @@ func fn_get_preamble(args ...any) any {
 	return b_read_file("runtime/preamble.tmpl")
 }
 
+func fn_resolve_imports(args ...any) any {
+	v_decls := args[0]
+	v_imported := args[1]
+	var v_result any = []any{}
+	var v_seen any = v_imported
+	var v_i any = int64(0)
+	for isTruthy(vLt(v_i, b_length(v_decls))) {
+		v_decl := b_index(v_decls, v_i)
+		v_dt := b_get(v_decl, "__type")
+		if isTruthy(vEq(v_dt, "ImportDecl")) {
+			v_path := vAdd(b_get(v_decl, "path"), ".vyr")
+			if isTruthy(vEq(b_has_key(v_seen, v_path), false)) {
+				v_seen = b_set(v_seen, v_path, true)
+				v_src := b_read_file(v_path)
+				v_toks := fn_tokenize(v_src)
+				v_r := fn_parse(v_toks)
+				if isTruthy(vNeq(b_get(v_r, "error"), "")) {
+					_ = b_print(vAdd(vAdd(vAdd("Import error (", v_path), "): "), b_get(v_r, "error")))
+					return v_result
+				}
+				v_imported_prog := b_get(v_r, "node")
+				v_inner := fn_resolve_imports(b_get(v_imported_prog, "decls"), v_seen)
+				var v_j any = int64(0)
+				for isTruthy(vLt(v_j, b_length(v_inner))) {
+					v_result = b_push(v_result, b_index(v_inner, v_j))
+					v_j = vAdd(v_j, int64(1))
+				}
+			}
+		} else {
+			v_result = b_push(v_result, v_decl)
+		}
+		v_i = vAdd(v_i, int64(1))
+	}
+	return v_result
+}
+
 func fn_main(args ...any) any {
 	v_argv := b_args()
 	if isTruthy(vLt(b_length(v_argv), int64(1))) {
@@ -2846,7 +2893,9 @@ func fn_main(args ...any) any {
 		return nil
 	}
 	v_prog := b_get(v_result, "node")
-	v_go_code := fn_generate(v_prog)
+	v_resolved_decls := fn_resolve_imports(b_get(v_prog, "decls"), map[string]any{})
+	v_resolved_prog := fn_Program(v_resolved_decls)
+	v_go_code := fn_generate(v_resolved_prog)
 	_ = b_write_file(v_output_file, v_go_code)
 	return b_print(vAdd(vAdd(vAdd("Compiled ", v_input_file), " -> "), v_output_file))
 }

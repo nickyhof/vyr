@@ -51,6 +51,7 @@ fn is_builtin(name) {
     "is_err" => true
     "unwrap" => true
     "unwrap_or" => true
+    "unwrap_err" => true
     "try_read_file" => true
     "try_to_int" => true
     "map" => true

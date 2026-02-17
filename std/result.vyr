@@ -12,7 +12,7 @@ fn map_ok(result, f) {
 
 fn map_err(result, f) {
   if is_err(result) {
-    let val = unwrap_or(result, "")
+    let val = unwrap_err(result)
     err(val |> f)
   } else {
     result
@@ -41,5 +41,39 @@ fn flatten_result(result) {
     unwrap(result)
   } else {
     result
+  }
+}
+
+fn collect_results(xs) {
+  let mut values = []
+  let mut i = 0
+  while i < length(xs) {
+    let r = index(xs, i)
+    if is_err(r) { return r }
+    values = push(values, unwrap(r))
+    i = i + 1
+  }
+  ok(values)
+}
+
+fn tap_ok(result, f) {
+  if is_ok(result) {
+    f(unwrap(result))
+  }
+  result
+}
+
+fn tap_err(result, f) {
+  if is_err(result) {
+    f(unwrap_err(result))
+  }
+  result
+}
+
+fn result_to_string(result) {
+  if is_ok(result) {
+    "Ok(" + to_string(unwrap(result)) + ")"
+  } else {
+    "Err(" + to_string(unwrap_err(result)) + ")"
   }
 }

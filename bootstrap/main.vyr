@@ -8,6 +8,40 @@ import "bootstrap/lexer"
 import "bootstrap/parser"
 import "bootstrap/codegen"
 
+fn resolve_imports(decls, imported) {
+  let mut result = []
+  let mut seen = imported
+  let mut i = 0
+  while i < length(decls) {
+    let decl = index(decls, i)
+    let dt = get(decl, "__type")
+    if dt == "ImportDecl" {
+      let path = decl.path + ".vyr"
+      if has_key(seen, path) == false {
+        seen = set(seen, path, true)
+        let src = read_file(path)
+        let toks = tokenize(src)
+        let r = parse(toks)
+        if get(r, "error") != "" {
+          print("Import error (" + path + "): " + get(r, "error"))
+          return result
+        }
+        let imported_prog = get(r, "node")
+        let inner = resolve_imports(imported_prog.decls, seen)
+        let mut j = 0
+        while j < length(inner) {
+          result = push(result, index(inner, j))
+          j = j + 1
+        }
+      }
+    } else {
+      result = push(result, decl)
+    }
+    i = i + 1
+  }
+  result
+}
+
 fn main() {
   let argv = args()
   if length(argv) < 1 {
@@ -42,10 +76,15 @@ fn main() {
   }
   let prog = get(result, "node")
 
+  // Resolve imports
+  let resolved_decls = resolve_imports(prog.decls, #{})
+  let resolved_prog = Program(resolved_decls)
+
   // Generate Go code
-  let go_code = generate(prog)
+  let go_code = generate(resolved_prog)
 
   // Write output
   write_file(output_file, go_code)
   print("Compiled " + input_file + " -> " + output_file)
 }
+

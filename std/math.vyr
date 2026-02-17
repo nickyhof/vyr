@@ -64,3 +64,51 @@ fn average(xs) {
   let count = xs |> length
   total / count
 }
+
+fn lcm(a, b) {
+  let g = gcd(a, b)
+  if g == 0 { 0 } else { abs(a * b) / g }
+}
+
+fn fib(n) {
+  if n <= 0 { 0 } else {
+    if n == 1 { 1 } else {
+      let mut a = 0
+      let mut b = 1
+      let mut i = 2
+      while i <= n {
+        let tmp = a + b
+        a = b
+        b = tmp
+        i = i + 1
+      }
+      b
+    }
+  }
+}
+
+fn is_prime(n) {
+  if n <= 1 { return false }
+  if n <= 3 { return true }
+  if mod(n, 2) == 0 { return false }
+  let mut i = 3
+  while i * i <= n {
+    if mod(n, i) == 0 { return false }
+    i = i + 2
+  }
+  true
+}
+
+fn divisors(n) {
+  let x = abs(n)
+  if x == 0 { return [] }
+  let mut result = []
+  let mut i = 1
+  while i <= x {
+    if mod(x, i) == 0 {
+      result = push(result, i)
+    }
+    i = i + 1
+  }
+  result
+}

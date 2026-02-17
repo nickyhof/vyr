@@ -619,6 +619,14 @@ func b_unwrap_or(args ...any) any {
 	return args[1]
 }
 
+func b_unwrap_err(args ...any) any {
+	r := args[0].(*Result)
+	if r.Ok {
+		panic(fmt.Sprintf("unwrap_err called on Ok: %v", r.Value))
+	}
+	return r.Value
+}
+
 func b_try_read_file(args ...any) any {
 	path := args[0].(string)
 	data, err := os.ReadFile(path)
