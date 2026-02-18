@@ -1,0 +1,75 @@
+// std/http — HTTP client and server utilities for Vyr
+
+import "std/result"
+
+/// Sends a GET request and parses the JSON response.
+fn get_json(url) {
+  http_get(url) |> and_then(fn(resp) {
+    json_parse(get(resp, "body"))
+  })
+}
+
+/// Sends a POST request with a JSON body and parses the response.
+fn post_json(url, data) {
+  let body = json_encode(data) |> unwrap
+  http_post(url, body, "application/json") |> and_then(fn(resp) {
+    json_parse(get(resp, "body"))
+  })
+}
+
+/// Returns true if the response status is 200-299.
+fn response_ok(resp) {
+  let status = get(resp, "status")
+  if status >= 200 { status < 300 } else { false }
+}
+
+/// Extracts the body from a response hashmap.
+fn response_body(resp) {
+  get(resp, "body")
+}
+
+/// Extracts the status code from a response hashmap.
+fn response_status(resp) {
+  get(resp, "status")
+}
+
+/// Creates a JSON response hashmap with status 200.
+fn json_response(data) {
+  let body = json_encode(data) |> unwrap
+  let mut r = set(#{}, "status", 200)
+  r = set(r, "body", body)
+  r = set(r, "headers", set(#{}, "Content-Type", "application/json"))
+  r
+}
+
+/// Creates a text response hashmap with status 200.
+fn text_response(text) {
+  let mut r = set(#{}, "status", 200)
+  r = set(r, "body", text)
+  r = set(r, "headers", set(#{}, "Content-Type", "text/plain"))
+  r
+}
+
+/// Creates an error response hashmap.
+fn error_response(status, message) {
+  let body = json_encode(set(#{}, "error", message)) |> unwrap
+  let mut r = set(#{}, "status", status)
+  r = set(r, "body", body)
+  r = set(r, "headers", set(#{}, "Content-Type", "application/json"))
+  r
+}
+
+/// Starts an HTTP server with route-based dispatch.
+/// Routes is a hashmap of { path: handler_fn }.
+/// Each handler receives a request and returns a response hashmap.
+fn serve(port, routes) {
+  http_serve(port, fn(req) {
+    let path = get(req, "path")
+    if has_key(routes, path) {
+      let handler = get(routes, path)
+      handler(req)
+    } else {
+      error_response(404, "Not Found")
+    }
+  })
+}

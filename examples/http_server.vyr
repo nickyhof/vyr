@@ -1,0 +1,29 @@
+// Example: Simple JSON API server in Vyr
+
+import "std/http"
+import "std/collections"
+
+fn main() {
+  // In-memory data
+  let todos = [
+    #{ id: 1, title: "Learn Vyr", done: true },
+    #{ id: 2, title: "Build something", done: false }
+  ]
+
+  let mut routes = #{}
+  routes = set(routes, "/health", fn(req) {
+    let method = get(req, "method")
+    json_response(#{ status: "ok", via: method })
+  })
+  routes = set(routes, "/todos", fn(req) {
+    json_response(#{ items: todos, method: get(req, "method") })
+  })
+  routes = set(routes, "/echo", fn(req) {
+    let body = get(req, "body")
+    let parsed = json_parse(body) |> unwrap_or(#{ raw: body })
+    json_response(#{ echo: parsed, method: get(req, "method") })
+  })
+
+  print("Starting Vyr API server...")
+  serve(3000, routes)
+}

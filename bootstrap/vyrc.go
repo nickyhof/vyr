@@ -1,11 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ===== Vyr Runtime =====
@@ -697,11 +701,223 @@ func b_args(_ ...any) any {
 	return result
 }
 
+// ---------- HTTP builtins ----------
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
+
+func makeResponse(resp *http.Response) any {
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	headers := map[string]any{}
+	for k, v := range resp.Header {
+		if len(v) == 1 {
+			headers[k] = v[0]
+		} else {
+			vals := make([]any, len(v))
+			for i, s := range v {
+				vals[i] = s
+			}
+			headers[k] = vals
+		}
+	}
+	return map[string]any{
+		"status":  int64(resp.StatusCode),
+		"body":    string(body),
+		"headers": headers,
+	}
+}
+
+func b_http_get(args ...any) any {
+	url := args[0].(string)
+	resp, err := httpClient.Get(url)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: makeResponse(resp)}
+}
+
+func b_http_post(args ...any) any {
+	url := args[0].(string)
+	body := args[1].(string)
+	contentType := args[2].(string)
+	resp, err := httpClient.Post(url, contentType, strings.NewReader(body))
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: makeResponse(resp)}
+}
+
+func b_http_request(args ...any) any {
+	method := args[0].(string)
+	url := args[1].(string)
+	headers := args[2].(map[string]any)
+	body := args[3].(string)
+
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	for k, v := range headers {
+		req.Header.Set(k, fmt.Sprintf("%v", v))
+	}
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: makeResponse(resp)}
+}
+
+func b_http_serve(args ...any) any {
+	port := fmt.Sprintf("%v", args[0])
+	handler := args[1]
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		defer r.Body.Close()
+
+		query := map[string]any{}
+		for k, v := range r.URL.Query() {
+			if len(v) == 1 {
+				query[k] = v[0]
+			} else {
+				vals := make([]any, len(v))
+				for i, s := range v {
+					vals[i] = s
+				}
+				query[k] = vals
+			}
+		}
+
+		headers := map[string]any{}
+		for k, v := range r.Header {
+			if len(v) == 1 {
+				headers[k] = v[0]
+			}
+		}
+
+		req := map[string]any{
+			"method":  r.Method,
+			"path":    r.URL.Path,
+			"body":    string(body),
+			"headers": headers,
+			"query":   query,
+		}
+
+		result := callFn(handler, req)
+		resp, ok := result.(map[string]any)
+		if !ok {
+			w.WriteHeader(500)
+			w.Write([]byte("handler must return a hashmap"))
+			return
+		}
+
+		if respHeaders, ok := resp["headers"].(map[string]any); ok {
+			for k, v := range respHeaders {
+				w.Header().Set(k, fmt.Sprintf("%v", v))
+			}
+		}
+
+		status := int64(200)
+		if s, ok := resp["status"]; ok {
+			status = s.(int64)
+		}
+		w.WriteHeader(int(status))
+
+		if b, ok := resp["body"]; ok {
+			w.Write([]byte(fmt.Sprintf("%v", b)))
+		}
+	})
+
+	fmt.Printf("Listening on :%s\n", port)
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return nil
+}
+
+// ---------- JSON builtins ----------
+
+func jsonToVyr(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		result := map[string]any{}
+		for k, v := range val {
+			result[k] = jsonToVyr(v)
+		}
+		return result
+	case []any:
+		result := make([]any, len(val))
+		for i, v := range val {
+			result[i] = jsonToVyr(v)
+		}
+		return result
+	case float64:
+		if val == float64(int64(val)) {
+			return int64(val)
+		}
+		return val
+	case bool:
+		return val
+	case nil:
+		return nil
+	default:
+		return fmt.Sprintf("%v", val)
+	}
+}
+
+func vyrToJSON(v any) any {
+	switch val := v.(type) {
+	case map[string]any:
+		result := map[string]any{}
+		for k, v := range val {
+			if k == "__type" {
+				continue
+			}
+			result[k] = vyrToJSON(v)
+		}
+		return result
+	case []any:
+		result := make([]any, len(val))
+		for i, v := range val {
+			result[i] = vyrToJSON(v)
+		}
+		return result
+	case int64:
+		return float64(val)
+	default:
+		return val
+	}
+}
+
+func b_json_parse(args ...any) any {
+	s := args[0].(string)
+	var v any
+	if err := json.Unmarshal([]byte(s), &v); err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: jsonToVyr(v)}
+}
+
+func b_json_encode(args ...any) any {
+	data, err := json.Marshal(vyrToJSON(args[0]))
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: string(data)}
+}
+
 // Suppress unused import warnings.
 var _ = os.ReadFile
 var _ = sort.Strings
 var _ = strconv.Itoa
 var _ = strings.Join
+var _ = time.Second
+var _ = io.ReadAll
+var _ = json.Marshal
 
 
 func fn_Token(args ...any) any {
@@ -2258,6 +2474,24 @@ func fn_is_builtin(args ...any) any {
 		return true
 	}
 	if valuesEqual(v_name, "args") {
+		return true
+	}
+	if valuesEqual(v_name, "http_get") {
+		return true
+	}
+	if valuesEqual(v_name, "http_post") {
+		return true
+	}
+	if valuesEqual(v_name, "http_request") {
+		return true
+	}
+	if valuesEqual(v_name, "http_serve") {
+		return true
+	}
+	if valuesEqual(v_name, "json_parse") {
+		return true
+	}
+	if valuesEqual(v_name, "json_encode") {
 		return true
 	}
 	return false

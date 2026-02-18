@@ -1,0 +1,34 @@
+// Example: HTTP client that calls the local API server
+// Run http_server.vyr first, then run this.
+
+import "std/http"
+
+fn main() {
+  let base = "http://localhost:3000"
+
+  // GET /health
+  print("=== GET /health ===")
+  let health = http_get(base + "/health") |> unwrap
+  print("Status: " + to_string(get(health, "status")))
+  print("Body:   " + get(health, "body"))
+
+  // GET /todos
+  print("\n=== GET /todos ===")
+  let todos = get_json(base + "/todos") |> unwrap
+  print(todos)
+
+  // POST /echo
+  print("\n=== POST /echo ===")
+  let payload = json_encode(#{ message: "hello from vyr", count: 42 }) |> unwrap
+  let echo = http_post(base + "/echo", payload, "application/json") |> unwrap
+  print("Status: " + to_string(get(echo, "status")))
+  print("Body:   " + get(echo, "body"))
+
+  // GET /missing (404)
+  print("\n=== GET /missing ===")
+  let missing = http_get(base + "/missing") |> unwrap
+  print("Status: " + to_string(get(missing, "status")))
+  print("Body:   " + get(missing, "body"))
+
+  print("\nAll client tests passed!")
+}
