@@ -1,0 +1,64 @@
+// std/fs — Filesystem utilities for Vyr
+
+/// Creates a directory (and parents) at path. Returns a Result.
+fn ensure_dir(path) {
+  mkdir(path)
+}
+
+/// Lists files (non-directories) in a directory.
+fn list_files(path) {
+  readdir(path) |> map_ok(fn(entries) {
+    filter(entries, fn(e) { get(e, "is_dir") == false })
+  })
+}
+
+/// Lists subdirectories in a directory.
+fn list_dirs(path) {
+  readdir(path) |> map_ok(fn(entries) {
+    filter(entries, fn(e) { get(e, "is_dir") == true })
+  })
+}
+
+/// Copies a file from src to dst.
+fn copy_file(src, dst) {
+  let result = try_read_file(src)
+  if is_err(result) { return result }
+  let content = unwrap(result)
+  write_file(dst, content)
+  ok(true)
+}
+
+/// Writes a Vyr value as JSON to a file.
+fn write_json(path, data) {
+  let encoded = json_encode(data)
+  if is_err(encoded) { return encoded }
+  write_file(path, unwrap(encoded))
+  ok(true)
+}
+
+/// Reads a JSON file and parses it into a Vyr value.
+fn read_json(path) {
+  try_read_file(path) |> and_then(fn(content) {
+    json_parse(content)
+  })
+}
+
+/// Returns the file size in bytes, or -1 if not found.
+fn file_size(path) {
+  let result = stat(path)
+  if is_ok(result) {
+    get(unwrap(result), "size")
+  } else {
+    0 - 1
+  }
+}
+
+/// Deletes a single file. Returns a Result.
+fn delete(path) {
+  delete_file(path)
+}
+
+/// Recursively deletes a directory and its contents. Returns a Result.
+fn delete_recursive(path) {
+  delete_all(path)
+}

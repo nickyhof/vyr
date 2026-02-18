@@ -1,0 +1,74 @@
+// Example: System stdlib — fs, env, time, regex, process
+
+import "std/result"
+import "std/fs"
+import "std/env"
+import "std/time"
+import "std/regex"
+import "std/process"
+
+fn main() {
+  // === Time ===
+  print("=== Time ===")
+  let ts = timestamp()
+  print("Now: " + ts)
+  let d = today()
+  print("Today: " + d)
+
+  let ms = elapsed_ms(fn() {
+    sleep_ms(50)
+  })
+  print("Sleep 50ms took: " + to_string(ms) + "ms")
+
+  // === Env ===
+  print("\n=== Env ===")
+  let home = home_dir()
+  print("HOME: " + home)
+  let missing = env_or("VYR_NONEXISTENT", "default_value")
+  print("Missing env: " + missing)
+  let required = require_env("HOME")
+  print("Required HOME: " + to_string(is_ok(required)))
+
+  // === Regex ===
+  print("\n=== Regex ===")
+  let email_valid = is_email("user@example.com")
+  print("user@example.com is email: " + to_string(email_valid))
+  let email_invalid = is_email("not-an-email")
+  print("not-an-email is email: " + to_string(email_invalid))
+  let numeric = is_numeric("12345")
+  print("12345 is numeric: " + to_string(numeric))
+  let found = extract("(\\d+)-(\\w+)", "123-abc") |> unwrap
+  print("Extract: " + to_string(found))
+  let replaced = replace_all("\\d+", "a1b2c3", "X") |> unwrap
+  print("Replace digits: " + replaced)
+
+  // === Filesystem ===
+  print("\n=== Filesystem ===")
+  let dir = "/tmp/vyr_test_dir"
+  ensure_dir(dir)
+  print("Created dir: " + dir)
+  print("Exists: " + to_string(file_exists(dir)))
+  write_file(dir + "/test.txt", "hello vyr")
+  let sz = file_size(dir + "/test.txt")
+  print("File size: " + to_string(sz))
+  write_json(dir + "/data.json", #{ name: "vyr", version: 1 })
+  let data = read_json(dir + "/data.json") |> unwrap
+  print("Read JSON: " + to_string(data))
+  let files = list_files(dir) |> unwrap
+  print("Files: " + to_string(length(files)))
+  delete_recursive(dir)
+  print("Cleaned up: " + to_string(file_exists(dir) == false))
+
+  // === Process ===
+  print("\n=== Process ===")
+  let result = run_output("echo hello from vyr") |> unwrap
+  print("Exec: " + result)
+  let success = shell("true")
+  print("Shell true: " + to_string(success))
+  let fail = shell("false")
+  print("Shell false: " + to_string(fail))
+  let dir_result = cwd()
+  print("CWD: " + dir_result)
+
+  print("\nAll system stdlib tests passed!")
+}

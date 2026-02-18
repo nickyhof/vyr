@@ -1,0 +1,38 @@
+// std/time — Time utilities for Vyr
+
+/// Returns the current Unix timestamp in seconds.
+fn now_seconds() {
+  now_ms() / 1000
+}
+
+/// Measures elapsed time of a function call in milliseconds.
+fn elapsed_ms(f) {
+  let start = now_ms()
+  f()
+  now_ms() - start
+}
+
+/// Returns the current time as a formatted timestamp string.
+fn timestamp() {
+  format_time(now_ms(), "YYYY-MM-DD hh:mm:ss")
+}
+
+/// Returns the current date as YYYY-MM-DD.
+fn today() {
+  format_time(now_ms(), "YYYY-MM-DD")
+}
+
+/// Sleeps for the given number of seconds.
+fn sleep(seconds) {
+  sleep_ms(seconds * 1000)
+}
+
+/// Formats a Unix millisecond timestamp as a date string.
+fn format_date(unix_ms) {
+  format_time(unix_ms, "YYYY-MM-DD")
+}
+
+/// Formats a Unix millisecond timestamp as a datetime string.
+fn format_datetime(unix_ms) {
+  format_time(unix_ms, "YYYY-MM-DD hh:mm:ss")
+}

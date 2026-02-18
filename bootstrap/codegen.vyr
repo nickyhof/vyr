@@ -65,6 +65,24 @@ fn is_builtin(name) {
     "http_serve" => true
     "json_parse" => true
     "json_encode" => true
+    "mkdir" => true
+    "readdir" => true
+    "file_exists" => true
+    "delete_file" => true
+    "delete_all" => true
+    "stat" => true
+    "get_env" => true
+    "set_env" => true
+    "env_vars" => true
+    "now_ms" => true
+    "sleep_ms" => true
+    "format_time" => true
+    "regex_match" => true
+    "regex_find" => true
+    "regex_replace" => true
+    "regex_find_all" => true
+    "exec" => true
+    "exit" => true
     _ => false
   }
 }

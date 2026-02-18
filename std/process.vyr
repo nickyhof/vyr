@@ -1,0 +1,48 @@
+// std/process — Process execution utilities for Vyr
+
+/// Runs a shell command and returns a Result with stdout, stderr, exit_code.
+fn run(command) {
+  exec(command)
+}
+
+/// Runs a command and returns just the stdout output (trimmed).
+fn run_output(command) {
+  exec(command) |> map_ok(fn(r) {
+    trim(get(r, "stdout"))
+  })
+}
+
+/// Runs a command, printing output. Exits with its exit code on failure.
+fn run_or_exit(command) {
+  let result = exec(command)
+  if is_err(result) {
+    print("Error: " + to_string(unwrap_err(result)))
+    exit(1)
+  }
+  let r = unwrap(result)
+  let stdout = get(r, "stdout")
+  let stderr = get(r, "stderr")
+  let code = get(r, "exit_code")
+  if stdout != "" { print(stdout) }
+  if stderr != "" { print(stderr) }
+  if code != 0 { exit(code) }
+  r
+}
+
+/// Runs a command in a shell and returns true if it exits successfully.
+fn shell(command) {
+  let result = exec(command)
+  if is_err(result) { return false }
+  let r = unwrap(result)
+  get(r, "exit_code") == 0
+}
+
+/// Returns the current working directory.
+fn cwd() {
+  let result = exec("pwd")
+  if is_ok(result) {
+    trim(get(unwrap(result), "stdout"))
+  } else {
+    ""
+  }
+}

@@ -35,8 +35,27 @@ go run hello.go
 - **Mutable variables** — `let mut x = 0`
 - **While loops** — `while x < 10 { ... }`
 - **Return statements** — `return value`
-- **Standard library** — `std/math`, `std/string`, `std/collections`, `std/io`, `std/result`
+- **Standard library** — 128 functions across 12 modules
 - **Self-hosted compiler** — the compiler is written in Vyr
+
+## Standard Library
+
+> 📖 **[Full API Reference](https://nickyhof.github.io/vyr/)** — searchable docs with every function signature and description.
+
+| Module | Functions | Description |
+|--------|-----------|-------------|
+| `std/math` | 19 | `abs`, `max`, `clamp`, `fib`, `gcd`, `pow`, … |
+| `std/string` | 21 | `repeat`, `pad_left`, `trim`, `contains`, `replace`, … |
+| `std/collections` | 27 | `any`, `all`, `zip`, `group_by`, `sort_by`, `chunk`, … |
+| `std/result` | 9 | `map_ok`, `and_then`, `flatten_result`, `collect_results`, … |
+| `std/functional` | 7 | `compose`, `pipe`, `identity`, `always`, `flip`, … |
+| `std/io` | 3 | `read_lines`, `write_lines`, `append_line` |
+| `std/http` | 9 | `get_json`, `post_json`, `json_response`, `serve`, … |
+| `std/fs` | 9 | `ensure_dir`, `list_files`, `read_json`, `write_json`, `copy_file`, … |
+| `std/env` | 5 | `env_or`, `require_env`, `home_dir`, `path_dirs`, … |
+| `std/time` | 7 | `timestamp`, `today`, `elapsed_ms`, `sleep`, `format_time`, … |
+| `std/regex` | 7 | `is_match`, `extract`, `replace_all`, `is_email`, `is_numeric`, … |
+| `std/process` | 5 | `run`, `run_output`, `run_or_exit`, `shell`, `cwd` |
 
 ## Examples
 

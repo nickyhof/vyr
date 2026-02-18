@@ -1,0 +1,38 @@
+// std/regex — Regular expression utilities for Vyr
+
+/// Returns true if the string matches the pattern.
+fn is_match(pattern, s) {
+  regex_match(pattern, s)
+}
+
+/// Extracts the first match and capture groups. Returns a Result.
+fn extract(pattern, s) {
+  regex_find(pattern, s)
+}
+
+/// Replaces all occurrences of pattern in s with replacement.
+fn replace_all(pattern, s, replacement) {
+  regex_replace(pattern, s, replacement)
+}
+
+/// Finds all matches in s, returning a list of match groups.
+fn scan(pattern, s) {
+  regex_find_all(pattern, s)
+}
+
+/// Splits a string by a regex pattern.
+fn regex_split(pattern, s) {
+  regex_replace(pattern, s, "\x00") |> map_ok(fn(result) {
+    split(result, "\x00")
+  })
+}
+
+/// Returns true if the string matches an email-like pattern.
+fn is_email(s) {
+  regex_match("^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$", s)
+}
+
+/// Returns true if the string contains only digits.
+fn is_numeric(s) {
+  regex_match("^[0-9]+$", s)
+}

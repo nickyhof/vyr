@@ -6,6 +6,9 @@ import (
 	"io"
 	"net/http"
 	"os"
+	os_exec "os/exec"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -910,6 +913,206 @@ func b_json_encode(args ...any) any {
 	return &Result{Ok: true, Value: string(data)}
 }
 
+// ---------- Filesystem builtins ----------
+
+func b_mkdir(args ...any) any {
+	path := args[0].(string)
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: nil}
+}
+
+func b_readdir(args ...any) any {
+	path := args[0].(string)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	result := make([]any, len(entries))
+	for i, e := range entries {
+		info, _ := e.Info()
+		size := int64(0)
+		if info != nil {
+			size = info.Size()
+		}
+		result[i] = map[string]any{
+			"name":   e.Name(),
+			"is_dir": e.IsDir(),
+			"size":   size,
+		}
+	}
+	return &Result{Ok: true, Value: result}
+}
+
+func b_delete_file(args ...any) any {
+	path := args[0].(string)
+	if err := os.Remove(path); err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: nil}
+}
+
+func b_delete_all(args ...any) any {
+	path := args[0].(string)
+	if err := os.RemoveAll(path); err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: nil}
+}
+
+func b_stat(args ...any) any {
+	path := args[0].(string)
+	info, err := os.Stat(path)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: map[string]any{
+		"name":   info.Name(),
+		"size":   info.Size(),
+		"is_dir": info.IsDir(),
+	}}
+}
+
+// ---------- Environment builtins ----------
+
+func b_get_env(args ...any) any {
+	return os.Getenv(args[0].(string))
+}
+
+func b_set_env(args ...any) any {
+	os.Setenv(args[0].(string), args[1].(string))
+	return nil
+}
+
+func b_env_vars(_ ...any) any {
+	result := map[string]any{}
+	for _, e := range os.Environ() {
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) == 2 {
+			result[parts[0]] = parts[1]
+		}
+	}
+	return result
+}
+
+// ---------- Time builtins ----------
+
+func b_now_ms(_ ...any) any {
+	return time.Now().UnixMilli()
+}
+
+func b_sleep_ms(args ...any) any {
+	ms := args[0].(int64)
+	time.Sleep(time.Duration(ms) * time.Millisecond)
+	return nil
+}
+
+func b_format_time(args ...any) any {
+	unixMs := args[0].(int64)
+	format := args[1].(string)
+	t := time.UnixMilli(unixMs)
+	// Map common format tokens to Go layout
+	layout := format
+	layout = strings.ReplaceAll(layout, "YYYY", "2006")
+	layout = strings.ReplaceAll(layout, "MM", "01")
+	layout = strings.ReplaceAll(layout, "DD", "02")
+	layout = strings.ReplaceAll(layout, "hh", "15")
+	layout = strings.ReplaceAll(layout, "mm", "04")
+	layout = strings.ReplaceAll(layout, "ss", "05")
+	return t.Format(layout)
+}
+
+// ---------- Regex builtins ----------
+
+func b_regex_match(args ...any) any {
+	pattern := args[0].(string)
+	s := args[1].(string)
+	matched, err := regexp.MatchString(pattern, s)
+	if err != nil {
+		return false
+	}
+	return matched
+}
+
+func b_regex_find(args ...any) any {
+	pattern := args[0].(string)
+	s := args[1].(string)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	match := re.FindStringSubmatch(s)
+	if match == nil {
+		return &Result{Ok: true, Value: []any{}}
+	}
+	result := make([]any, len(match))
+	for i, m := range match {
+		result[i] = m
+	}
+	return &Result{Ok: true, Value: result}
+}
+
+func b_regex_replace(args ...any) any {
+	pattern := args[0].(string)
+	s := args[1].(string)
+	repl := args[2].(string)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	return &Result{Ok: true, Value: re.ReplaceAllString(s, repl)}
+}
+
+func b_regex_find_all(args ...any) any {
+	pattern := args[0].(string)
+	s := args[1].(string)
+	re, err := regexp.Compile(pattern)
+	if err != nil {
+		return &Result{Ok: false, Value: err.Error()}
+	}
+	matches := re.FindAllStringSubmatch(s, -1)
+	result := make([]any, len(matches))
+	for i, m := range matches {
+		inner := make([]any, len(m))
+		for j, s := range m {
+			inner[j] = s
+		}
+		result[i] = inner
+	}
+	return &Result{Ok: true, Value: result}
+}
+
+// ---------- Process builtins ----------
+
+func b_exec(args ...any) any {
+	command := args[0].(string)
+	cmd := os_exec.Command("sh", "-c", command)
+	var stdout, stderr strings.Builder
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err := cmd.Run()
+	exitCode := int64(0)
+	if err != nil {
+		if exitErr, ok := err.(*os_exec.ExitError); ok {
+			exitCode = int64(exitErr.ExitCode())
+		} else {
+			return &Result{Ok: false, Value: err.Error()}
+		}
+	}
+	return &Result{Ok: true, Value: map[string]any{
+		"stdout":    stdout.String(),
+		"stderr":    stderr.String(),
+		"exit_code": exitCode,
+	}}
+}
+
+func b_exit(args ...any) any {
+	code := args[0].(int64)
+	os.Exit(int(code))
+	return nil
+}
+
 // Suppress unused import warnings.
 var _ = os.ReadFile
 var _ = sort.Strings
@@ -918,4 +1121,7 @@ var _ = strings.Join
 var _ = time.Second
 var _ = io.ReadAll
 var _ = json.Marshal
+var _ = regexp.Compile
+var _ = os_exec.Command
+var _ = filepath.Join
 
