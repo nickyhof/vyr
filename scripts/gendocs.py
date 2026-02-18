@@ -90,6 +90,12 @@ def generate_html(modules: list[Module]) -> str:
             "result": "⊕",
             "functional": "λ",
             "io": "⇄",
+            "http": "⚡",
+            "fs": "📂",
+            "env": "🔧",
+            "time": "⏱",
+            "regex": ".*",
+            "process": "⚙",
         }.get(mod.name, "•")
 
         sidebar_html += f"""
